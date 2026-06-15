@@ -1,0 +1,31 @@
+ARG CUDA_IMAGE=nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+FROM ${CUDA_IMAGE}
+
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/workspace/src \
+    HF_HOME=/workspace/.cache/huggingface \
+    TRANSFORMERS_CACHE=/workspace/.cache/huggingface \
+    TOKENIZERS_PARALLELISM=false
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv python3-dev python-is-python3 \
+    build-essential git git-lfs curl ca-certificates ninja-build \
+    libaio-dev openssh-client && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --upgrade pip setuptools wheel packaging
+
+RUN python3 -m pip install \
+    torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
+    --index-url ${TORCH_INDEX_URL}
+
+COPY docker/requirements-train.txt /tmp/requirements-train.txt
+RUN python3 -m pip install -r /tmp/requirements-train.txt
+
+WORKDIR /workspace
+
+CMD ["/bin/bash"]

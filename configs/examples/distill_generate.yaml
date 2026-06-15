@@ -1,0 +1,18 @@
+teacher:
+  name_or_path: Qwen/Qwen2.5-7B-Instruct
+  trust_remote_code: true
+  attn_implementation: sdpa
+  torch_dtype: float16
+  load_in_4bit: false
+
+data:
+  path: data/distill_prompts.jsonl
+  prompt_field: prompt
+  output_path: data/distill_sft.jsonl
+
+generation:
+  max_new_tokens: 512
+  temperature: 0.7
+  top_p: 0.9
+  do_sample: true
+  batch_size: 1

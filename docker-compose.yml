@@ -1,0 +1,65 @@
+services:
+  train:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.train
+      args:
+        CUDA_IMAGE: ${TRAIN_CUDA_IMAGE:-nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04}
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}
+    image: ${TRAIN_IMAGE:-post-training:cu124-train}
+    shm_size: "64gb"
+    ipc: host
+    network_mode: host
+    gpus: all
+    tty: true
+    stdin_open: true
+    working_dir: /workspace
+    environment:
+      PYTHONPATH: /workspace/src
+      HF_HOME: ${HF_HOME:-/workspace/.cache/huggingface}
+      TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/workspace/.cache/huggingface}
+      HF_TOKEN: ${HF_TOKEN:-}
+      WANDB_API_KEY: ${WANDB_API_KEY:-}
+      NCCL_DEBUG: WARN
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - ./:/workspace
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  serve:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.serve
+      args:
+        CUDA_IMAGE: ${SERVE_CUDA_IMAGE:-nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04}
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}
+    image: ${SERVE_IMAGE:-post-training:cu124-serve}
+    shm_size: "16gb"
+    ipc: host
+    gpus: all
+    ports:
+      - "8000:8000"
+    working_dir: /workspace
+    environment:
+      PYTHONPATH: /workspace/src
+      MODEL_ID: ${MODEL_ID:-Qwen/Qwen2.5-7B-Instruct}
+      HF_HOME: ${HF_HOME:-/workspace/.cache/huggingface}
+      TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/workspace/.cache/huggingface}
+      HF_TOKEN: ${HF_TOKEN:-}
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - ./:/workspace
+    command: ["uvicorn", "post_training.serve_openai:app", "--host", "0.0.0.0", "--port", "8000"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
