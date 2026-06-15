@@ -5,6 +5,9 @@ services:
       dockerfile: docker/Dockerfile.train
       args:
         CUDA_IMAGE: ${TRAIN_CUDA_IMAGE:-nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04}
+        TORCH_VERSION: ${TORCH_VERSION:-2.6.0}
+        TORCHVISION_VERSION: ${TORCHVISION_VERSION:-0.21.0}
+        TORCHAUDIO_VERSION: ${TORCHAUDIO_VERSION:-2.6.0}
         TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}
     image: ${TRAIN_IMAGE:-post-training:cu124-train}
     shm_size: "64gb"
@@ -38,6 +41,9 @@ services:
       dockerfile: docker/Dockerfile.serve
       args:
         CUDA_IMAGE: ${SERVE_CUDA_IMAGE:-nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04}
+        TORCH_VERSION: ${TORCH_VERSION:-2.6.0}
+        TORCHVISION_VERSION: ${TORCHVISION_VERSION:-0.21.0}
+        TORCHAUDIO_VERSION: ${TORCHAUDIO_VERSION:-2.6.0}
         TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}
     image: ${SERVE_IMAGE:-post-training:cu124-serve}
     shm_size: "16gb"

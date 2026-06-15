@@ -6,6 +6,8 @@ Current target machines:
 
 - Node A: 8 GPUs, 80GB VRAM each, driver `550.54.14`, `nvidia-smi` CUDA `12.4`.
 - Node B: 8 GPUs, 80GB VRAM each, driver `535.86.10`, `nvidia-smi` CUDA `12.2`.
+- Temporary Node C: A800 8 GPUs, 80GB VRAM each, driver `530.30.02`, `nvidia-smi` CUDA `12.1`.
+- Temporary Node D: V100 8 GPUs. Use it only as a lower-end validation machine.
 
 This is much better than the original V100 plan. Use one machine first to finish the full workflow, then use two machines for larger full-parameter SFT, DPO, GRPO, or long-context experiments.
 
@@ -43,6 +45,101 @@ After that, move to Qwen3 30B-A3B:
 torchrun --nproc_per_node=8 src/post_training/sft.py configs/examples/sft_lora_qwen3_30b_a3b.yaml
 ```
 
+## Temporary Path: A800 CUDA 12.1
+
+If Node A is busy, the temporary A800 machine with driver `530.30.02` and CUDA `12.1` is a good fallback.
+
+Use the cu121 environment file before building:
+
+```bash
+cp .env.a800-cu121.example .env
+docker compose build train serve
+docker compose run --rm --service-ports train
+python scripts/check_env.py
+```
+
+Expected key lines:
+
+```text
+torch: 2.5.1+cu121
+torch cuda: 12.1
+gpu count: 8
+```
+
+Then run the same single-node smoke test:
+
+```bash
+torchrun --nproc_per_node=8 src/post_training/sft.py configs/examples/sft_lora.yaml
+```
+
+On A800, BF16 should be available, so the Qwen3 30B-A3B BF16 LoRA config is still appropriate:
+
+```bash
+torchrun --nproc_per_node=8 src/post_training/sft.py configs/examples/sft_lora_qwen3_30b_a3b.yaml
+```
+
+## Temporary Path: V100 8-GPU
+
+Use the V100 machine only when A100/A800 is not available. Its role is to keep the workflow moving, not to run the final large-model experiments.
+
+V100 constraints:
+
+- Volta architecture, compute capability `sm_70`.
+- FP16 only for practical training; no BF16.
+- Do not use FlashAttention-2/3.
+- Keep `attn_implementation: sdpa` or `eager`.
+- Treat vLLM/SGLang and AWQ/GPTQ kernels as validation targets, not assumptions; many modern wheels target newer architectures.
+- 30B/35B SFT/DPO/GRPO is not a good use of this machine.
+
+Use the V100 cu121 environment if the host driver supports CUDA 12.1 or newer:
+
+```bash
+cp .env.v100-cu121.example .env
+docker compose build train serve
+docker compose run --rm --service-ports train
+python scripts/check_env.py
+```
+
+Expected key lines:
+
+```text
+torch: 2.5.1+cu121
+torch cuda: 12.1
+gpu count: 8
+```
+
+Start with conservative 7B LoRA:
+
+```bash
+torchrun --nproc_per_node=8 src/post_training/sft.py configs/examples/sft_lora_v100_7b.yaml
+```
+
+If memory is tight, use 7B QLoRA:
+
+```bash
+torchrun --nproc_per_node=8 src/post_training/sft.py configs/examples/sft_qlora_v100_7b.yaml
+```
+
+V100 recommended scope:
+
+| Task | V100 Status |
+| --- | --- |
+| 7B LoRA SFT | Good |
+| 7B QLoRA SFT | Good |
+| 7B small DPO | Possible, tune sequence length and batch carefully |
+| 7B small GRPO | Possible but slow; keep `num_generations` small |
+| OPD teacher generation | Possible for small teacher/student models |
+| bitsandbytes 4-bit experiments | Possible |
+| Transformers FastAPI baseline serving | Possible |
+| full SFT 7B | Possible on 32GB V100, tight on 16GB V100 |
+| 14B LoRA | Possible on 32GB V100, expect tuning |
+| 14B full SFT | Not recommended |
+| 30B/35B LoRA | Not recommended; use A800/A100 |
+| 30B/35B full SFT/DPO/GRPO | Do not use V100 |
+| Qwen3.6-35B-A3B multimodal | Do not use V100 |
+| BF16 / FP8 | Not supported |
+| FlashAttention-2/3 | Not supported |
+
 ## Environment Choice
 
 The two nodes do not expose the same maximum CUDA runtime through the driver. Pick one of these paths:
@@ -57,7 +154,7 @@ docker compose build train serve
 
 ### Fallback: Use CUDA 12.1 Runtime On Both Nodes
 
-If Node B cannot be upgraded, use the same CUDA 12.1 / PyTorch cu121 image on both nodes. Do not mix cu124 and cu121 across nodes for distributed training.
+If Node B cannot be upgraded, or if you are using the temporary A800 CUDA 12.1 machine, use the CUDA 12.1 / PyTorch cu121 image. Do not mix cu124 and cu121 across nodes for distributed training.
 
 ```bash
 cp .env.example .env
@@ -68,6 +165,9 @@ Then uncomment the cu121 block in `.env`:
 ```bash
 TRAIN_CUDA_IMAGE=nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 SERVE_CUDA_IMAGE=nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+TORCH_VERSION=2.5.1
+TORCHVISION_VERSION=0.20.1
+TORCHAUDIO_VERSION=2.5.1
 TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121
 TRAIN_IMAGE=post-training:cu121-train
 SERVE_IMAGE=post-training:cu121-serve
@@ -96,6 +196,8 @@ If using the cu121 fallback:
 ```bash
 docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi
 ```
+
+For V100, first check the driver with `nvidia-smi`. If the driver is too old for CUDA 12.1 containers, use an older CUDA/PyTorch stack instead of forcing this repo's cu121 image.
 
 Start an interactive shell:
 
@@ -140,10 +242,11 @@ Distillation prompt JSONL:
 
 Suggested progression:
 
-1. Start with `Qwen/Qwen2.5-7B-Instruct` or `Qwen/Qwen3-8B` to verify data, training, checkpoint, merge, and deployment.
-2. Move to `Qwen/Qwen3-14B` or `Qwen/Qwen3-32B` for a more realistic dense-model run.
-3. Use `Qwen/Qwen3-30B-A3B` for MoE LoRA/QLoRA and DPO experiments.
-4. Use `Qwen/Qwen3.6-35B-A3B` after the text-only pipeline is stable. It is a newer multimodal MoE model, so multimodal fine-tuning needs extra processor/data-collator work beyond the text-only scripts here.
+1. On V100, only run `Qwen/Qwen2.5-7B-Instruct` or `Qwen/Qwen3-8B` smoke tests.
+2. On A800/A100, start with `Qwen/Qwen2.5-7B-Instruct` or `Qwen/Qwen3-8B` to verify data, training, checkpoint, merge, and deployment.
+3. Move to `Qwen/Qwen3-14B` or `Qwen/Qwen3-32B` for a more realistic dense-model run.
+4. Use `Qwen/Qwen3-30B-A3B` for MoE LoRA/QLoRA and DPO experiments.
+5. Use `Qwen/Qwen3.6-35B-A3B` after the text-only pipeline is stable. It is a newer multimodal MoE model, so multimodal fine-tuning needs extra processor/data-collator work beyond the text-only scripts here.
 
 On 8x80GB, `bf16` is usually the right default if the GPU architecture supports it. If the GPUs are A100/A800/H100/H800/L40S, prefer BF16. If the GPUs are actually older cards with 80GB memory and no BF16 support, switch configs back to FP16.
 
@@ -310,7 +413,9 @@ Replace `eth0` with the interface used by the GPU servers. Check with `ip addr`.
 
 - Do not mix driver/CUDA/PyTorch stacks between the two nodes.
 - Prefer BF16 on A100/A800/H100/H800/L40S.
+- Use FP16 on V100. Do not enable BF16.
 - Keep LoRA/QLoRA as the default for 30B/35B experiments until the pipeline is stable.
+- Do not run 30B/35B main experiments on V100.
 - Full SFT and GRPO should be promoted to 16 GPUs only after single-node runs are stable.
 - For Qwen3.6 multimodal fine-tuning, add multimodal dataset loading and processor/collator support first.
 
@@ -318,7 +423,10 @@ Replace `eth0` with the interface used by the GPU servers. Check with `ip addr`.
 
 - NVIDIA R550 `550.54.14` release notes list CUDA Toolkit 12.4 support: https://docs.nvidia.com/datacenter/tesla/tesla-release-notes-550-54-14/index.html
 - NVIDIA R535 release notes list CUDA Toolkit 12.2 support: https://docs.nvidia.com/datacenter/tesla/tesla-release-notes-535-54-03/index.html
+- NVIDIA CUDA 12.1 release notes list Linux driver `530.30.02` for CUDA 12.1 GA: https://docs.nvidia.com/cuda/archive/12.1.0/cuda-toolkit-release-notes/index.html
 - PyTorch official previous-version table lists cu124 wheels for Torch 2.6.0 and other CUDA wheel variants: https://pytorch.org/get-started/previous-versions/
 - NVIDIA Container Toolkit install guide: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+- NVIDIA lists Tesla V100 as compute capability 7.0: https://developer.nvidia.com/cuda/gpus
+- FlashAttention-2 documents CUDA support for Ampere/Ada/Hopper GPUs, excluding V100/Volta: https://github.com/Dao-AILab/flash-attention
 - Qwen3-30B-A3B model card: https://huggingface.co/Qwen/Qwen3-30B-A3B
 - Qwen3.6-35B-A3B model card: https://huggingface.co/Qwen/Qwen3.6-35B-A3B

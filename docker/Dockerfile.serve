@@ -1,6 +1,9 @@
 ARG CUDA_IMAGE=nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 FROM ${CUDA_IMAGE}
 
+ARG TORCH_VERSION=2.6.0
+ARG TORCHVISION_VERSION=0.21.0
+ARG TORCHAUDIO_VERSION=2.6.0
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -18,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python3 -m pip install --upgrade pip setuptools wheel packaging
 
 RUN python3 -m pip install \
-    torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
+    torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} \
     --index-url ${TORCH_INDEX_URL}
 
 COPY docker/requirements-serve.txt /tmp/requirements-serve.txt

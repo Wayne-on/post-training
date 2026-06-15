@@ -2,6 +2,10 @@
 
 This roadmap records the agreed validation path for the 8x80GB Node A first, with Node B and multi-node work deferred.
 
+If Node A is busy, use the temporary A800 8x80GB machine with driver `530.30.02` / CUDA `12.1`. That path uses `.env.a800-cu121.example` and PyTorch `2.5.1+cu121`.
+
+If only V100 is available, use it as a workflow validation machine only. That path uses `.env.v100-cu121.example`, FP16, and small 7B LoRA/QLoRA configs.
+
 ## Framework Roles
 
 Use different frameworks for different jobs instead of forcing one framework to do everything.
@@ -24,11 +28,46 @@ Use Node A first:
 - 8 GPUs, 80GB VRAM each
 - default repo image: CUDA 12.4 / PyTorch cu124
 
+Temporary alternative:
+
+- A800 8x80GB
+- driver `530.30.02`
+- `nvidia-smi` CUDA `12.1`
+- copy `.env.a800-cu121.example` to `.env`
+- build CUDA 12.1 / PyTorch 2.5.1 cu121 images
+
+Lower-end temporary alternative:
+
+- V100 8 GPUs
+- Volta / `sm_70`
+- use FP16 only, not BF16
+- copy `.env.v100-cu121.example` to `.env`
+- build CUDA 12.1 / PyTorch 2.5.1 cu121 images if the host driver supports it
+
 Goal: confirm Docker, GPU visibility, CUDA, PyTorch, NCCL basics, and filesystem paths.
 
 Commands:
 
 ```bash
+# Node A default path:
+docker compose build train serve
+docker compose run --rm --service-ports train
+python scripts/check_env.py
+```
+
+For the temporary A800:
+
+```bash
+cp .env.a800-cu121.example .env
+docker compose build train serve
+docker compose run --rm --service-ports train
+python scripts/check_env.py
+```
+
+For the temporary V100:
+
+```bash
+cp .env.v100-cu121.example .env
 docker compose build train serve
 docker compose run --rm --service-ports train
 python scripts/check_env.py
@@ -55,6 +94,18 @@ Run:
 torchrun --nproc_per_node=8 src/post_training/sft.py configs/examples/sft_lora.yaml
 ```
 
+On V100, use the conservative config instead:
+
+```bash
+torchrun --nproc_per_node=8 src/post_training/sft.py configs/examples/sft_lora_v100_7b.yaml
+```
+
+If memory is tight:
+
+```bash
+torchrun --nproc_per_node=8 src/post_training/sft.py configs/examples/sft_qlora_v100_7b.yaml
+```
+
 Then verify:
 
 ```bash
@@ -74,6 +125,8 @@ Exit criteria:
 
 Do not spend time making this repo the main training framework. Its role is visibility and debugability.
 
+V100 exit criteria are lower: confirm that data loading, distributed launch, checkpoint save, LoRA merge, and baseline serving work. Do not expect V100 to validate large-model throughput.
+
 ## Stage 2: ms-swift Mainline
 
 Goal: use ms-swift as the main framework for Qwen experiments.
@@ -90,8 +143,9 @@ Run these in ms-swift after Stage 1 passes:
 Recommended progression:
 
 ```text
-Qwen2.5-7B or Qwen3-8B
--> Qwen3-14B / Qwen3-32B
+V100: Qwen2.5-7B or Qwen3-8B smoke test only
+-> A800/A100: Qwen2.5-7B or Qwen3-8B
+-> A800/A100: Qwen3-14B / Qwen3-32B
 -> Qwen3-30B-A3B
 -> Qwen3.6-35B-A3B only after text-only flow is stable
 ```
@@ -142,6 +196,8 @@ Move to verl if OPD becomes one of these:
 
 Do not start here. verl is powerful, but it adds orchestration complexity that is unnecessary for the first offline OPD prototype.
 
+Do not use V100 as the main verl machine. Use A800/A100 for rollout-heavy RL.
+
 Exit criteria:
 
 - single-node verl GRPO/PPO job works on Node A;
@@ -157,6 +213,8 @@ For actual serving experiments, prefer:
 - vLLM for OpenAI-compatible serving and high throughput;
 - SGLang for structured generation and agent-style serving;
 - bitsandbytes / AWQ / GPTQ depending on model and runtime support.
+
+On V100, use the Transformers/FastAPI baseline first. Treat vLLM/SGLang/AWQ/GPTQ as compatibility checks because many modern kernels are built for newer GPU architectures.
 
 Exit criteria:
 
@@ -204,7 +262,7 @@ Exit criteria:
 ## Final Recommended Sequence
 
 ```text
-Node A environment validation
+Node A/A800 environment validation, or V100 workflow-only validation
 -> HF/TRL small-model smoke test
 -> ms-swift mainline SFT/DPO/GRPO
 -> HF/TRL OPD prototype
