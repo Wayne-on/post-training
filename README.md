@@ -83,6 +83,23 @@ cp data/sft.jsonl frameworks/llama-factory/data/sft.jsonl
 llamafactory-cli train frameworks/llama-factory/configs/qwen2_5_7b_lora_sft.yaml
 ```
 
+The LLaMA-Factory container also mounts:
+
+```text
+/data2/ysh/post-training -> /workspace
+/data/test-files -> /root/nfs
+/etc/localtime -> /etc/localtime:ro
+```
+
+Set `ROOT_PASS` only in the server-side `.env` if you need that variable:
+
+```bash
+ROOT_PASS=your_password
+NFS_MOUNT=/data/test-files
+```
+
+Do not commit the real password.
+
 On A800, BF16 should be available, so the Qwen3 30B-A3B BF16 LoRA config is still appropriate:
 
 ```bash

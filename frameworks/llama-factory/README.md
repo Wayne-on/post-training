@@ -20,6 +20,15 @@ docker compose up -d llamafactory
 docker exec -it posttrain_lf bash
 ```
 
+Before `docker compose up`, edit the server-side `.env` if needed:
+
+```env
+ROOT_PASS=your_password
+NFS_MOUNT=/data/test-files
+```
+
+The container mounts the project at `/workspace`, `${NFS_MOUNT}` at `/root/nfs`, and `/etc/localtime` read-only for host time synchronization.
+
 Inside the container:
 
 ```bash
