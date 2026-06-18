@@ -13,7 +13,7 @@ services:
     shm_size: "64gb"
     ipc: host
     network_mode: host
-    gpus: all
+    runtime: nvidia
     tty: true
     stdin_open: true
     working_dir: /workspace
@@ -23,6 +23,8 @@ services:
       TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/workspace/.cache/huggingface}
       HF_TOKEN: ${HF_TOKEN:-}
       WANDB_API_KEY: ${WANDB_API_KEY:-}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
       NCCL_DEBUG: WARN
       TOKENIZERS_PARALLELISM: "false"
     volumes:
@@ -48,7 +50,7 @@ services:
     image: ${SERVE_IMAGE:-post-training:cu124-serve}
     shm_size: "16gb"
     ipc: host
-    gpus: all
+    runtime: nvidia
     ports:
       - "8000:8000"
     working_dir: /workspace
@@ -58,6 +60,8 @@ services:
       HF_HOME: ${HF_HOME:-/workspace/.cache/huggingface}
       TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/workspace/.cache/huggingface}
       HF_TOKEN: ${HF_TOKEN:-}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
       TOKENIZERS_PARALLELISM: "false"
     volumes:
       - ./:/workspace
@@ -85,7 +89,7 @@ services:
     shm_size: "64gb"
     ipc: host
     network_mode: host
-    gpus: all
+    runtime: nvidia
     tty: true
     stdin_open: true
     working_dir: /workspace
@@ -94,6 +98,8 @@ services:
       TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/workspace/.cache/huggingface}
       HF_TOKEN: ${HF_TOKEN:-}
       WANDB_API_KEY: ${WANDB_API_KEY:-}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
       NCCL_DEBUG: WARN
       TOKENIZERS_PARALLELISM: "false"
     volumes:
