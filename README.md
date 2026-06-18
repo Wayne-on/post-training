@@ -76,7 +76,8 @@ Preferred LLaMA-Factory smoke test on A800:
 
 ```bash
 docker compose build llamafactory
-docker compose run --rm llamafactory
+docker compose up -d llamafactory
+docker exec -it posttrain_lf bash
 llamafactory-cli env
 cp data/sft.jsonl frameworks/llama-factory/data/sft.jsonl
 llamafactory-cli train frameworks/llama-factory/configs/qwen2_5_7b_lora_sft.yaml

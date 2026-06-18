@@ -145,7 +145,8 @@ Build and enter the LLaMA-Factory container:
 
 ```bash
 docker compose build llamafactory
-docker compose run --rm llamafactory
+docker compose up -d llamafactory
+docker exec -it posttrain_lf bash
 llamafactory-cli env
 ```
 

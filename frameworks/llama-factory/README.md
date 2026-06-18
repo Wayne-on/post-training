@@ -16,7 +16,8 @@ Keep the custom HF/TRL scripts in `src/post_training/` for algorithm debugging a
 ```bash
 cp .env.a800-cu121.example .env
 docker compose build llamafactory
-docker compose run --rm llamafactory
+docker compose up -d llamafactory
+docker exec -it posttrain_lf bash
 ```
 
 Inside the container:
@@ -79,6 +80,22 @@ Small 7B SFT smoke test:
 ```bash
 llamafactory-cli train frameworks/llama-factory/configs/qwen2_5_7b_lora_sft.yaml
 ```
+
+TensorBoard:
+
+```bash
+tensorboard --logdir outputs --host 0.0.0.0 --port 6006
+```
+
+Then open port `32006` on the host.
+
+LLaMA-Factory WebUI:
+
+```bash
+llamafactory-cli webui --host 0.0.0.0 --port 7860
+```
+
+Then open port `32060` on the host.
 
 Qwen3 30B-A3B LoRA SFT:
 

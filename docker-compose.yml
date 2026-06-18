@@ -52,7 +52,7 @@ services:
     ipc: host
     runtime: nvidia
     ports:
-      - "8000:8000"
+      - "${SERVE_HOST_PORT:-32001}:8000"
     working_dir: /workspace
     environment:
       PYTHONPATH: /workspace/src
@@ -86,13 +86,19 @@ services:
         TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}
         LLAMA_FACTORY_REF: ${LLAMA_FACTORY_REF:-v0.9.5}
     image: ${LLAMA_FACTORY_IMAGE:-post-training:llamafactory}
-    shm_size: "64gb"
+    container_name: ${LLAMA_FACTORY_CONTAINER_NAME:-posttrain_lf}
+    shm_size: "${LLAMA_FACTORY_SHM_SIZE:-128gb}"
     ipc: host
-    network_mode: host
     runtime: nvidia
     tty: true
     stdin_open: true
     working_dir: /workspace
+    command: ["sleep", "infinity"]
+    ports:
+      - "${LLAMA_FACTORY_API_PORT:-32002}:8000"
+      - "${LLAMA_FACTORY_TENSORBOARD_PORT:-32006}:6006"
+      - "${LLAMA_FACTORY_WEBUI_PORT:-32060}:7860"
+      - "${LLAMA_FACTORY_JUPYTER_PORT:-32080}:8888"
     environment:
       HF_HOME: ${HF_HOME:-/workspace/.cache/huggingface}
       TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/workspace/.cache/huggingface}
