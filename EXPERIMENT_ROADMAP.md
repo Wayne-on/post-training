@@ -13,11 +13,12 @@ Use different frameworks for different jobs instead of forcing one framework to 
 | Area | Primary Choice | Why |
 | --- | --- | --- |
 | Environment smoke test | This repo, HF/TRL/DeepSpeed | Transparent and easy to debug. |
-| Main Qwen SFT/DPO/GRPO experiments | ms-swift | Strong Qwen/Qwen3/MoE/multimodal support. |
+| Main Qwen SFT/DPO/PPO-style experiments | LLaMA-Factory first | Fastest path to run Qwen LoRA/SFT/DPO/export with CLI and WebUI. |
+| Qwen/MoE/multimodal backup path | ms-swift | Keep it available if LLaMA-Factory hits a Qwen3.6/MoE/multimodal edge case. |
 | OPD prototype | This repo, HF/TRL | Easier to customize teacher generation, filtering, reward, KL, and distillation logic. |
 | Online RL / rollout-heavy training | verl | Better fit for PPO/GRPO-style RL dataflows with vLLM/SGLang/FSDP/Megatron integration. |
 | Deployment | vLLM or SGLang, plus this repo's FastAPI baseline | Use the baseline for correctness; use vLLM/SGLang for throughput. |
-| Two-node / 16-GPU scale-out | ms-swift first, verl if doing RL | Do this only after single-node experiments are stable. |
+| Two-node / 16-GPU scale-out | LLaMA-Factory/ms-swift first, verl if doing RL | Do this only after single-node experiments are stable. |
 
 ## Stage 0: Node A Environment Validation
 
@@ -127,18 +128,46 @@ Do not spend time making this repo the main training framework. Its role is visi
 
 V100 exit criteria are lower: confirm that data loading, distributed launch, checkpoint save, LoRA merge, and baseline serving work. Do not expect V100 to validate large-model throughput.
 
-## Stage 2: ms-swift Mainline
+## Stage 2: LLaMA-Factory Mainline
 
-Goal: use ms-swift as the main framework for Qwen experiments.
+Goal: use LLaMA-Factory as the first main framework for Qwen experiments.
 
-Run these in ms-swift after Stage 1 passes:
+Run these in LLaMA-Factory after Stage 1 passes:
 
 1. LoRA SFT
 2. full-parameter SFT
 3. DPO
-4. GRPO
+4. PPO-style experiments if needed
 5. larger Qwen models such as `Qwen/Qwen3-30B-A3B`
 6. later, Qwen3.6 multimodal models if needed
+
+Build and enter the LLaMA-Factory container:
+
+```bash
+docker compose build llamafactory
+docker compose run --rm llamafactory
+llamafactory-cli env
+```
+
+Run the first LLaMA-Factory smoke test:
+
+```bash
+cp data/sft.jsonl frameworks/llama-factory/data/sft.jsonl
+llamafactory-cli train frameworks/llama-factory/configs/qwen2_5_7b_lora_sft.yaml
+```
+
+Run Qwen3 30B-A3B SFT:
+
+```bash
+llamafactory-cli train frameworks/llama-factory/configs/qwen3_30b_a3b_lora_sft.yaml
+```
+
+Run Qwen3 30B-A3B DPO after the SFT adapter exists:
+
+```bash
+cp data/dpo.jsonl frameworks/llama-factory/data/dpo.jsonl
+llamafactory-cli train frameworks/llama-factory/configs/qwen3_30b_a3b_lora_dpo.yaml
+```
 
 Recommended progression:
 
@@ -152,9 +181,11 @@ V100: Qwen2.5-7B or Qwen3-8B smoke test only
 
 Exit criteria:
 
-- ms-swift can run SFT and DPO/GRPO on Node A;
+- LLaMA-Factory can run SFT and DPO on A800/Node A;
 - generated checkpoints can be exported and served;
 - training metrics and eval outputs are reproducible enough to compare runs.
+
+Keep ms-swift as Stage 2B if LLaMA-Factory hits a model-specific gap, especially around Qwen3.6, MoE, or multimodal workflows.
 
 ## Stage 3: OPD Prototype With HF/TRL
 
@@ -181,6 +212,7 @@ Exit criteria:
 - filtering criteria are logged and inspectable;
 - student model improves on the target eval set;
 - the implementation is clear enough to port into ms-swift or scale with verl if needed.
+- the implementation is clear enough to port into LLaMA-Factory/ms-swift or scale with verl if needed.
 
 ## Stage 4: verl For Online RL Or Rollout-Heavy OPD
 
@@ -264,7 +296,8 @@ Exit criteria:
 ```text
 Node A/A800 environment validation, or V100 workflow-only validation
 -> HF/TRL small-model smoke test
--> ms-swift mainline SFT/DPO/GRPO
+-> LLaMA-Factory mainline SFT/DPO/export
+-> ms-swift only if LLaMA-Factory hits a model-specific gap
 -> HF/TRL OPD prototype
 -> verl for online RL or rollout-heavy OPD
 -> two-node 16-GPU scale-out

@@ -11,7 +11,7 @@ Current target machines:
 
 This is much better than the original V100 plan. Use one machine first to finish the full workflow, then use two machines for larger full-parameter SFT, DPO, GRPO, or long-context experiments.
 
-For the agreed framework and validation sequence, see `EXPERIMENT_ROADMAP.md`.
+For the agreed framework and validation sequence, see `EXPERIMENT_ROADMAP.md`. LLaMA-Factory is now the preferred first framework to run through after the environment smoke test.
 
 ## Primary Path: Node A Single-Node First
 
@@ -72,10 +72,26 @@ Then run the same single-node smoke test:
 torchrun --nproc_per_node=8 src/post_training/sft.py configs/examples/sft_lora.yaml
 ```
 
+Preferred LLaMA-Factory smoke test on A800:
+
+```bash
+docker compose build llamafactory
+docker compose run --rm llamafactory
+llamafactory-cli env
+cp data/sft.jsonl frameworks/llama-factory/data/sft.jsonl
+llamafactory-cli train frameworks/llama-factory/configs/qwen2_5_7b_lora_sft.yaml
+```
+
 On A800, BF16 should be available, so the Qwen3 30B-A3B BF16 LoRA config is still appropriate:
 
 ```bash
 torchrun --nproc_per_node=8 src/post_training/sft.py configs/examples/sft_lora_qwen3_30b_a3b.yaml
+```
+
+Preferred LLaMA-Factory Qwen3 30B-A3B run:
+
+```bash
+llamafactory-cli train frameworks/llama-factory/configs/qwen3_30b_a3b_lora_sft.yaml
 ```
 
 ## Temporary Path: V100 8-GPU
@@ -252,6 +268,17 @@ On 8x80GB, `bf16` is usually the right default if the GPU architecture supports 
 
 ## Experiment 1: LoRA SFT
 
+Preferred LLaMA-Factory path:
+
+```bash
+docker compose build llamafactory
+docker compose run --rm llamafactory
+llamafactory-cli train frameworks/llama-factory/configs/qwen2_5_7b_lora_sft.yaml
+llamafactory-cli train frameworks/llama-factory/configs/qwen3_30b_a3b_lora_sft.yaml
+```
+
+HF/TRL debug path:
+
 Small first run:
 
 ```bash
@@ -289,6 +316,14 @@ For 30B/35B full SFT, expect to tune:
 - `deepspeed: configs/deepspeed/zero3_bf16.json` on BF16-capable GPUs, or `configs/deepspeed/zero3.json` on FP16-only GPUs.
 
 ## Experiment 2: DPO
+
+Preferred LLaMA-Factory path:
+
+```bash
+llamafactory-cli train frameworks/llama-factory/configs/qwen3_30b_a3b_lora_dpo.yaml
+```
+
+HF/TRL debug path:
 
 ```bash
 torchrun --nproc_per_node=8 src/post_training/dpo.py configs/examples/dpo_lora.yaml
@@ -428,5 +463,7 @@ Replace `eth0` with the interface used by the GPU servers. Check with `ip addr`.
 - NVIDIA Container Toolkit install guide: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
 - NVIDIA lists Tesla V100 as compute capability 7.0: https://developer.nvidia.com/cuda/gpus
 - FlashAttention-2 documents CUDA support for Ampere/Ada/Hopper GPUs, excluding V100/Volta: https://github.com/Dao-AILab/flash-attention
+- LLaMA-Factory official README documents Qwen3 support, `llamafactory-cli train/chat/export`, and multi-node examples: https://github.com/hiyouga/LLaMA-Factory
+- LLaMA-Factory examples README documents `FORCE_TORCHRUN`, DPO, full tuning, LoRA, QLoRA, and export workflows: https://github.com/hiyouga/LLaMA-Factory/blob/main/examples/README.md
 - Qwen3-30B-A3B model card: https://huggingface.co/Qwen/Qwen3-30B-A3B
 - Qwen3.6-35B-A3B model card: https://huggingface.co/Qwen/Qwen3.6-35B-A3B

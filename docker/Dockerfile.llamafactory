@@ -1,0 +1,42 @@
+ARG CUDA_IMAGE=nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+FROM ${CUDA_IMAGE}
+
+ARG TORCH_VERSION=2.6.0
+ARG TORCHVISION_VERSION=0.21.0
+ARG TORCHAUDIO_VERSION=2.6.0
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124
+ARG LLAMA_FACTORY_REF=v0.9.5
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HOME=/workspace/.cache/huggingface \
+    TRANSFORMERS_CACHE=/workspace/.cache/huggingface \
+    TOKENIZERS_PARALLELISM=false \
+    PATH=/opt/venv/bin:$PATH
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common curl ca-certificates git git-lfs \
+    build-essential ninja-build libaio-dev openssh-client && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 python3.11-dev python3.11-venv && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN python3.11 -m venv /opt/venv && \
+    python -m pip install --upgrade pip setuptools wheel packaging
+
+RUN python -m pip install \
+    torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} \
+    --index-url ${TORCH_INDEX_URL}
+
+RUN git clone --depth 1 --branch ${LLAMA_FACTORY_REF} https://github.com/hiyouga/LLaMA-Factory.git /opt/LLaMA-Factory
+
+WORKDIR /opt/LLaMA-Factory
+
+RUN python -m pip install -e . && \
+    python -m pip install deepspeed==0.16.7 bitsandbytes==0.45.5 nltk jieba rouge-chinese
+
+WORKDIR /workspace
+
+CMD ["/bin/bash"]

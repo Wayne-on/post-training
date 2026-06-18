@@ -7,6 +7,11 @@ __pycache__/
 .venv/
 venv/
 data/
+frameworks/llama-factory/data/*.json
+frameworks/llama-factory/data/*.jsonl
+frameworks/llama-factory/data/*.txt
+!frameworks/llama-factory/data/dataset_info.json
+!frameworks/llama-factory/data/README.md
 models/
 outputs/
 runs/

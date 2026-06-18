@@ -69,3 +69,39 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  llamafactory:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.llamafactory
+      args:
+        CUDA_IMAGE: ${TRAIN_CUDA_IMAGE:-nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04}
+        TORCH_VERSION: ${TORCH_VERSION:-2.6.0}
+        TORCHVISION_VERSION: ${TORCHVISION_VERSION:-0.21.0}
+        TORCHAUDIO_VERSION: ${TORCHAUDIO_VERSION:-2.6.0}
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}
+        LLAMA_FACTORY_REF: ${LLAMA_FACTORY_REF:-v0.9.5}
+    image: ${LLAMA_FACTORY_IMAGE:-post-training:llamafactory}
+    shm_size: "64gb"
+    ipc: host
+    network_mode: host
+    gpus: all
+    tty: true
+    stdin_open: true
+    working_dir: /workspace
+    environment:
+      HF_HOME: ${HF_HOME:-/workspace/.cache/huggingface}
+      TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/workspace/.cache/huggingface}
+      HF_TOKEN: ${HF_TOKEN:-}
+      WANDB_API_KEY: ${WANDB_API_KEY:-}
+      NCCL_DEBUG: WARN
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - ./:/workspace
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
