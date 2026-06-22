@@ -86,16 +86,16 @@ Expected formats:
 
 ## Commands
 
-Small 7B SFT smoke test:
+Preferred Qwen3.5-4B SFT smoke test:
 
 ```bash
-llamafactory-cli train frameworks/llama-factory/configs/qwen2_5_7b_lora_sft.yaml
+llamafactory-cli train frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sft.yaml
 ```
 
-If the model already exists under `/root/nfs/Qwen2.5-7B-Instruct`, use the local-path config:
+This expects the local model directory:
 
-```bash
-llamafactory-cli train frameworks/llama-factory/configs/local_qwen2_5_7b_lora_sft.yaml
+```text
+/root/nfs/Qwen3.5-4B
 ```
 
 TensorBoard:

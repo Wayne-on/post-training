@@ -86,8 +86,8 @@ Goal: verify the whole training loop before using ms-swift or larger Qwen models
 
 Use this repo with a small text-only Qwen model:
 
-- `Qwen/Qwen2.5-7B-Instruct`, or
-- `Qwen/Qwen3-8B`
+- local `Qwen3.5-4B`, or
+- `Qwen3-8B`
 
 Run:
 
@@ -107,12 +107,12 @@ If memory is tight:
 torchrun --nproc_per_node=8 src/post_training/sft.py configs/examples/sft_qlora_v100_7b.yaml
 ```
 
-Then verify:
+Then verify. For the LLaMA-Factory path, use the export config in Stage 2. For the HF/TRL debug path, merge the adapter against the same base model used for that run:
 
 ```bash
 python src/post_training/merge_lora.py \
-  --base_model Qwen/Qwen2.5-7B-Instruct \
-  --adapter outputs/sft-lora \
+  --base_model /root/nfs/Qwen3.5-4B \
+  --adapter <adapter-output-dir> \
   --output models/sft-lora-merged
 
 MODEL_ID=models/sft-lora-merged docker compose up serve
@@ -154,7 +154,7 @@ Run the first LLaMA-Factory smoke test:
 
 ```bash
 cp data/sft.jsonl frameworks/llama-factory/data/sft.jsonl
-llamafactory-cli train frameworks/llama-factory/configs/qwen2_5_7b_lora_sft.yaml
+llamafactory-cli train frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sft.yaml
 ```
 
 Run Qwen3 30B-A3B SFT:
@@ -173,8 +173,8 @@ llamafactory-cli train frameworks/llama-factory/configs/qwen3_30b_a3b_lora_dpo.y
 Recommended progression:
 
 ```text
-V100: Qwen2.5-7B or Qwen3-8B smoke test only
--> A800/A100: Qwen2.5-7B or Qwen3-8B
+V100: Qwen3.5-4B or Qwen3-8B smoke test only
+-> A800/A100: local Qwen3.5-4B
 -> A800/A100: Qwen3-14B / Qwen3-32B
 -> Qwen3-30B-A3B
 -> Qwen3.6-35B-A3B only after text-only flow is stable

@@ -80,7 +80,7 @@ docker compose up -d llamafactory
 docker exec -it posttrain_lf bash
 llamafactory-cli env
 cp data/sft.jsonl frameworks/llama-factory/data/sft.jsonl
-llamafactory-cli train frameworks/llama-factory/configs/qwen2_5_7b_lora_sft.yaml
+llamafactory-cli train frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sft.yaml
 ```
 
 The LLaMA-Factory container also mounts:
@@ -278,8 +278,8 @@ Distillation prompt JSONL:
 
 Suggested progression:
 
-1. On V100, only run `Qwen/Qwen2.5-7B-Instruct` or `Qwen/Qwen3-8B` smoke tests.
-2. On A800/A100, start with `Qwen/Qwen2.5-7B-Instruct` or `Qwen/Qwen3-8B` to verify data, training, checkpoint, merge, and deployment.
+1. On V100, only run `Qwen3.5-4B` or `Qwen3-8B` smoke tests.
+2. On A800/A100, start with local `Qwen3.5-4B` to verify data, training, checkpoint, merge, and deployment.
 3. Move to `Qwen/Qwen3-14B` or `Qwen/Qwen3-32B` for a more realistic dense-model run.
 4. Use `Qwen/Qwen3-30B-A3B` for MoE LoRA/QLoRA and DPO experiments.
 5. Use `Qwen/Qwen3.6-35B-A3B` after the text-only pipeline is stable. It is a newer multimodal MoE model, so multimodal fine-tuning needs extra processor/data-collator work beyond the text-only scripts here.
@@ -292,8 +292,9 @@ Preferred LLaMA-Factory path:
 
 ```bash
 docker compose build llamafactory
-docker compose run --rm llamafactory
-llamafactory-cli train frameworks/llama-factory/configs/qwen2_5_7b_lora_sft.yaml
+docker compose up -d llamafactory
+docker exec -it posttrain_lf bash
+llamafactory-cli train frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sft.yaml
 llamafactory-cli train frameworks/llama-factory/configs/qwen3_30b_a3b_lora_sft.yaml
 ```
 
