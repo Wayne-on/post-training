@@ -4,16 +4,14 @@
     "columns": {
       "prompt": "instruction",
       "query": "input",
-      "response": "output",
-      "system": "system"
+      "response": "output"
     }
   },
   "posttrain_sft_prompt_response": {
     "file_name": "sft.jsonl",
     "columns": {
       "prompt": "prompt",
-      "response": "response",
-      "system": "system"
+      "response": "response"
     }
   },
   "posttrain_sft_messages": {
@@ -36,8 +34,7 @@
     "columns": {
       "prompt": "prompt",
       "chosen": "chosen",
-      "rejected": "rejected",
-      "system": "system"
+      "rejected": "rejected"
     }
   }
 }
