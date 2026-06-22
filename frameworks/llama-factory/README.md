@@ -92,6 +92,12 @@ Small 7B SFT smoke test:
 llamafactory-cli train frameworks/llama-factory/configs/qwen2_5_7b_lora_sft.yaml
 ```
 
+If the model already exists under `/root/nfs/Qwen2.5-7B-Instruct`, use the local-path config:
+
+```bash
+llamafactory-cli train frameworks/llama-factory/configs/local_qwen2_5_7b_lora_sft.yaml
+```
+
 TensorBoard:
 
 ```bash
@@ -114,16 +120,34 @@ Qwen3 30B-A3B LoRA SFT:
 llamafactory-cli train frameworks/llama-factory/configs/qwen3_30b_a3b_lora_sft.yaml
 ```
 
+If the model already exists under `/root/nfs/Qwen3-30B-A3B`, use:
+
+```bash
+llamafactory-cli train frameworks/llama-factory/configs/local_qwen3_30b_a3b_lora_sft.yaml
+```
+
 Merge/export the Qwen3 30B-A3B SFT adapter:
 
 ```bash
 llamafactory-cli export frameworks/llama-factory/configs/qwen3_30b_a3b_lora_export.yaml
 ```
 
+For the local-path adapter:
+
+```bash
+llamafactory-cli export frameworks/llama-factory/configs/local_qwen3_30b_a3b_lora_export.yaml
+```
+
 DPO from the SFT adapter:
 
 ```bash
 llamafactory-cli train frameworks/llama-factory/configs/qwen3_30b_a3b_lora_dpo.yaml
+```
+
+For the local-path adapter:
+
+```bash
+llamafactory-cli train frameworks/llama-factory/configs/local_qwen3_30b_a3b_lora_dpo.yaml
 ```
 
 ## Notes

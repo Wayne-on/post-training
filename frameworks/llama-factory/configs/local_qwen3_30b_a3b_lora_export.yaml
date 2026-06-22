@@ -1,0 +1,13 @@
+### Note: DO NOT use quantized model or quantization_bit when merging LoRA adapters.
+
+### model
+model_name_or_path: /root/nfs/Qwen3-30B-A3B
+adapter_name_or_path: outputs/llamafactory/local-qwen3-30b-a3b/lora/sft
+template: qwen3_nothink
+trust_remote_code: true
+
+### export
+export_dir: models/llamafactory/local-qwen3-30b-a3b-sft-merged
+export_size: 5
+export_device: cpu
+export_legacy_format: false
