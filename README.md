@@ -86,7 +86,7 @@ llamafactory-cli train frameworks/llama-factory/configs/qwen2_5_7b_lora_sft.yaml
 The LLaMA-Factory container also mounts:
 
 ```text
-/data2/ysh/post-training -> /workspace
+/data2/ysh/post-training -> /root/post-training
 /data/test-files -> /root/nfs
 /etc/localtime -> /etc/localtime:ro
 ```
@@ -95,6 +95,8 @@ Set `ROOT_PASS` only in the server-side `.env` if you need that variable:
 
 ```bash
 ROOT_PASS=your_password
+PROJECT_DIR=/data2/ysh/post-training
+CONTAINER_WORKDIR=/root/post-training
 NFS_MOUNT=/data/test-files
 ```
 

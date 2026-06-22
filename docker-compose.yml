@@ -16,11 +16,11 @@ services:
     runtime: nvidia
     tty: true
     stdin_open: true
-    working_dir: /workspace
+    working_dir: ${CONTAINER_WORKDIR:-/root/post-training}
     environment:
-      PYTHONPATH: /workspace/src
-      HF_HOME: ${HF_HOME:-/workspace/.cache/huggingface}
-      TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/workspace/.cache/huggingface}
+      PYTHONPATH: ${CONTAINER_WORKDIR:-/root/post-training}/src
+      HF_HOME: ${HF_HOME:-/root/post-training/.cache/huggingface}
+      TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/root/post-training/.cache/huggingface}
       HF_TOKEN: ${HF_TOKEN:-}
       WANDB_API_KEY: ${WANDB_API_KEY:-}
       ROOT_PASS: ${ROOT_PASS:-}
@@ -29,7 +29,7 @@ services:
       NCCL_DEBUG: WARN
       TOKENIZERS_PARALLELISM: "false"
     volumes:
-      - ./:/workspace
+      - ${PROJECT_DIR:-.}:${CONTAINER_WORKDIR:-/root/post-training}
       - ${NFS_MOUNT:-/data/test-files}:/root/nfs
       - /etc/localtime:/etc/localtime:ro
     deploy:
@@ -56,18 +56,18 @@ services:
     runtime: nvidia
     ports:
       - "${SERVE_HOST_PORT:-32001}:8000"
-    working_dir: /workspace
+    working_dir: ${CONTAINER_WORKDIR:-/root/post-training}
     environment:
-      PYTHONPATH: /workspace/src
+      PYTHONPATH: ${CONTAINER_WORKDIR:-/root/post-training}/src
       MODEL_ID: ${MODEL_ID:-Qwen/Qwen2.5-7B-Instruct}
-      HF_HOME: ${HF_HOME:-/workspace/.cache/huggingface}
-      TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/workspace/.cache/huggingface}
+      HF_HOME: ${HF_HOME:-/root/post-training/.cache/huggingface}
+      TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/root/post-training/.cache/huggingface}
       HF_TOKEN: ${HF_TOKEN:-}
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       TOKENIZERS_PARALLELISM: "false"
     volumes:
-      - ./:/workspace
+      - ${PROJECT_DIR:-.}:${CONTAINER_WORKDIR:-/root/post-training}
     command: ["uvicorn", "post_training.serve_openai:app", "--host", "0.0.0.0", "--port", "8000"]
     deploy:
       resources:
@@ -95,7 +95,7 @@ services:
     runtime: nvidia
     tty: true
     stdin_open: true
-    working_dir: /workspace
+    working_dir: ${CONTAINER_WORKDIR:-/root/post-training}
     command: ["sleep", "infinity"]
     ports:
       - "${LLAMA_FACTORY_API_PORT:-32002}:8000"
@@ -103,8 +103,8 @@ services:
       - "${LLAMA_FACTORY_WEBUI_PORT:-32060}:7860"
       - "${LLAMA_FACTORY_JUPYTER_PORT:-32080}:8888"
     environment:
-      HF_HOME: ${HF_HOME:-/workspace/.cache/huggingface}
-      TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/workspace/.cache/huggingface}
+      HF_HOME: ${HF_HOME:-/root/post-training/.cache/huggingface}
+      TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/root/post-training/.cache/huggingface}
       HF_TOKEN: ${HF_TOKEN:-}
       WANDB_API_KEY: ${WANDB_API_KEY:-}
       ROOT_PASS: ${ROOT_PASS:-}
@@ -113,7 +113,7 @@ services:
       NCCL_DEBUG: WARN
       TOKENIZERS_PARALLELISM: "false"
     volumes:
-      - ./:/workspace
+      - ${PROJECT_DIR:-.}:${CONTAINER_WORKDIR:-/root/post-training}
       - ${NFS_MOUNT:-/data/test-files}:/root/nfs
       - /etc/localtime:/etc/localtime:ro
     deploy:

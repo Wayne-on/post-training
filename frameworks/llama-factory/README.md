@@ -24,10 +24,12 @@ Before `docker compose up`, edit the server-side `.env` if needed:
 
 ```env
 ROOT_PASS=your_password
+PROJECT_DIR=/data2/ysh/post-training
+CONTAINER_WORKDIR=/root/post-training
 NFS_MOUNT=/data/test-files
 ```
 
-The container mounts the project at `/workspace`, `${NFS_MOUNT}` at `/root/nfs`, and `/etc/localtime` read-only for host time synchronization.
+The container mounts `${PROJECT_DIR}` at `${CONTAINER_WORKDIR}`, `${NFS_MOUNT}` at `/root/nfs`, and `/etc/localtime` read-only for host time synchronization.
 
 Inside the container:
 
