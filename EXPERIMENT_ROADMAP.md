@@ -153,6 +153,8 @@ llamafactory-cli env
 Run the first LLaMA-Factory smoke test:
 
 ```bash
+mkdir -p data frameworks/llama-factory/data
+cp examples/datasets/customer_intent_sft_smoke.jsonl data/sft.jsonl
 cp data/sft.jsonl frameworks/llama-factory/data/sft.jsonl
 llamafactory-cli train frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sft.yaml
 ```

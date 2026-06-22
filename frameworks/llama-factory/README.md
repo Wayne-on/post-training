@@ -58,6 +58,14 @@ For SFT prompt/response data:
 cp data/sft.jsonl frameworks/llama-factory/data/sft.jsonl
 ```
 
+If you do not have your own SFT data yet, start with the included customer-service intent smoke dataset:
+
+```bash
+mkdir -p data frameworks/llama-factory/data
+cp examples/datasets/customer_intent_sft_smoke.jsonl data/sft.jsonl
+cp data/sft.jsonl frameworks/llama-factory/data/sft.jsonl
+```
+
 For SFT chat-message data:
 
 ```bash
