@@ -1,0 +1,34 @@
+{
+  "posttrain_sft": {
+    "file_name": "sft.jsonl",
+    "columns": {
+      "prompt": "prompt",
+      "response": "response",
+      "system": "system"
+    }
+  },
+  "posttrain_sft_messages": {
+    "file_name": "sft_messages.jsonl",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "posttrain_dpo": {
+    "file_name": "dpo.jsonl",
+    "ranking": true,
+    "columns": {
+      "prompt": "prompt",
+      "chosen": "chosen",
+      "rejected": "rejected",
+      "system": "system"
+    }
+  }
+}

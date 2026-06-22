@@ -7,7 +7,7 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
-data/
+/data/
 frameworks/llama-factory/data/*.json
 frameworks/llama-factory/data/*.jsonl
 frameworks/llama-factory/data/*.txt
