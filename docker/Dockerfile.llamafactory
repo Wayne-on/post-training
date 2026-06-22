@@ -35,7 +35,7 @@ RUN git clone --depth 1 --branch ${LLAMA_FACTORY_REF} https://github.com/hiyouga
 WORKDIR /opt/LLaMA-Factory
 
 RUN python -m pip install -e . && \
-    python -m pip install deepspeed==0.16.7 bitsandbytes==0.45.5 nltk jieba rouge-chinese
+    python -m pip install deepspeed==0.16.7 bitsandbytes==0.45.5 tensorboard==2.19.0 nltk jieba rouge-chinese
 
 WORKDIR /workspace
 
