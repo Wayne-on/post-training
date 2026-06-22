@@ -142,6 +142,12 @@ Qwen3.5-4B full-parameter SFT, 1k samples:
 python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_4b_full_sft_1k.yaml
 ```
 
+Test the Qwen3.5-4B LoRA adapter after SFT:
+
+```bash
+llamafactory-cli chat frameworks/llama-factory/configs/local_qwen3_5_4b_lora_chat.yaml
+```
+
 This expects the local model directory:
 
 ```text
