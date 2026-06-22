@@ -103,7 +103,7 @@ llamafactory-cli train frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sf
 This expects the local model directory:
 
 ```text
-/root/nfs/Qwen3.5-4B
+/root/nfs/llm-models/Qwen3.5-4B
 ```
 
 TensorBoard:

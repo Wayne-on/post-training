@@ -111,7 +111,7 @@ Then verify. For the LLaMA-Factory path, use the export config in Stage 2. For t
 
 ```bash
 python src/post_training/merge_lora.py \
-  --base_model /root/nfs/Qwen3.5-4B \
+  --base_model /root/nfs/llm-models/Qwen3.5-4B \
   --adapter <adapter-output-dir> \
   --output models/sft-lora-merged
 
