@@ -114,6 +114,34 @@ Preferred Qwen3.5-4B SFT smoke test:
 llamafactory-cli train frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sft.yaml
 ```
 
+Preferred benchmark wrapper for runs that need efficiency metrics:
+
+```bash
+python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sft.yaml
+```
+
+The wrapper runs `llamafactory-cli train`, samples GPU memory with `nvidia-smi`, estimates tokenizer-counted
+`tokens/s/gpu`, and writes:
+
+```text
+outputs/.../benchmark/benchmark_metrics.json
+outputs/.../benchmark/benchmark_metrics.md
+outputs/.../benchmark/gpu_samples.csv
+outputs/.../benchmark/train.log
+```
+
+To summarize an already completed run without re-training:
+
+```bash
+python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sft.yaml --no-train
+```
+
+Qwen3.5-4B full-parameter SFT, 1k samples:
+
+```bash
+python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_4b_full_sft_1k.yaml
+```
+
 This expects the local model directory:
 
 ```text
