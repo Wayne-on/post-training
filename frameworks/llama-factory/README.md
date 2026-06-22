@@ -78,7 +78,21 @@ For DPO data:
 cp data/dpo.jsonl frameworks/llama-factory/data/dpo.jsonl
 ```
 
-Expected formats:
+Preferred SFT format:
+
+```json
+{"instruction": "task instruction", "input": "optional user input", "output": "expected answer"}
+```
+
+`posttrain_sft` maps this format as:
+
+```text
+instruction -> prompt
+input -> query
+output -> response
+```
+
+Legacy prompt/response format is available as dataset name `posttrain_sft_prompt_response`:
 
 ```json
 {"prompt": "question", "response": "answer"}

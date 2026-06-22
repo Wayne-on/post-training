@@ -2,6 +2,15 @@
   "posttrain_sft": {
     "file_name": "sft.jsonl",
     "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output",
+      "system": "system"
+    }
+  },
+  "posttrain_sft_prompt_response": {
+    "file_name": "sft.jsonl",
+    "columns": {
       "prompt": "prompt",
       "response": "response",
       "system": "system"
