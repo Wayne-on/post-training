@@ -136,10 +136,10 @@ To summarize an already completed run without re-training:
 python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sft.yaml --no-train
 ```
 
-Qwen3.5-4B full-parameter SFT, 1k samples:
+Qwen3.5-4B full-parameter SFT, 10k samples, 3 epochs:
 
 ```bash
-python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_4b_full_sft_1k.yaml
+python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_4b_full_sft.yaml
 ```
 
 Test the Qwen3.5-4B LoRA adapter after SFT:
