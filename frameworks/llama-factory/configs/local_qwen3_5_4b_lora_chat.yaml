@@ -1,6 +1,6 @@
 ### model
 model_name_or_path: /root/nfs/llm-models/Qwen3.5-4B
-adapter_name_or_path: outputs/llamafactory/local-qwen3_5-4b/lora/sft
+adapter_name_or_path: outputs/llamafactory/local-qwen3_5-4b/lora/sft_10k_3ep_messages
 template: qwen3_nothink
 infer_backend: huggingface
 trust_remote_code: true

@@ -120,6 +120,14 @@ Preferred benchmark wrapper for runs that need efficiency metrics:
 python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sft.yaml
 ```
 
+For comparable 4B efficiency reporting, run both jobs with the same `sft_messages.jsonl`, `cutoff_len=2048`,
+`max_samples=10000`, `num_train_epochs=3`, and the benchmark wrapper:
+
+```bash
+python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sft.yaml
+python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_4b_full_sft.yaml
+```
+
 The wrapper runs `llamafactory-cli train`, samples GPU memory with `nvidia-smi`, estimates tokenizer-counted
 `tokens/s/gpu`, and writes:
 
