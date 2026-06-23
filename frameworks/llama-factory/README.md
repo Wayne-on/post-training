@@ -134,6 +134,12 @@ Qwen3.5-9B LoRA benchmark uses the same comparable settings:
 python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_9b_lora_sft.yaml
 ```
 
+Qwen3.5-9B full-parameter SFT benchmark uses ZeRO-3 BF16 with the same data and epoch settings:
+
+```bash
+python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft.yaml
+```
+
 The local model path is assumed to be:
 
 ```text
