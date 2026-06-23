@@ -8,10 +8,6 @@ trust_remote_code: true
 ### method
 finetuning_type: lora
 
-### prompt
-system: |-
-  你是物流客服意图识别与回复助手。请根据用户输入判断意图、抽取手机号和运单号，并生成客服回复。只输出合法 JSON，不要输出 Markdown 或额外解释。JSON schema 必须为：{"intent":"...","slots":{"phone":null或字符串,"waybill_no":null或字符串},"reply":"..."}
-
 ### generation
 do_sample: false
 max_new_tokens: 512

@@ -148,6 +148,20 @@ Test the Qwen3.5-4B LoRA adapter after SFT:
 llamafactory-cli chat frameworks/llama-factory/configs/local_qwen3_5_4b_lora_chat.yaml
 ```
 
+The LLaMA-Factory `chat` command in this environment does not accept a `system` key in the YAML config. For
+testing with the same fixed system prompt used by the SFT data, use:
+
+```bash
+python scripts/chat_lora_with_system.py frameworks/llama-factory/configs/local_qwen3_5_4b_lora_chat.yaml
+```
+
+One-shot test:
+
+```bash
+python scripts/chat_lora_with_system.py frameworks/llama-factory/configs/local_qwen3_5_4b_lora_chat.yaml \
+  --once "收件人15394359235"
+```
+
 This expects the local model directory:
 
 ```text
