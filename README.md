@@ -79,7 +79,7 @@ docker compose build llamafactory
 docker compose up -d llamafactory
 docker exec -it posttrain_lf bash
 llamafactory-cli env
-cp data/sft.jsonl frameworks/llama-factory/data/sft.jsonl
+cp data/sft_messages.jsonl frameworks/llama-factory/data/sft_messages.jsonl
 llamafactory-cli train frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sft.yaml
 ```
 
@@ -87,8 +87,8 @@ If you do not have your own SFT data yet, use the included customer-service inte
 
 ```bash
 mkdir -p data frameworks/llama-factory/data
-cp examples/datasets/customer_intent_sft_smoke.jsonl data/sft.jsonl
-cp data/sft.jsonl frameworks/llama-factory/data/sft.jsonl
+cp examples/datasets/customer_intent_sft_smoke.jsonl data/sft_messages.jsonl
+cp data/sft_messages.jsonl frameworks/llama-factory/data/sft_messages.jsonl
 ```
 
 The LLaMA-Factory container also mounts:

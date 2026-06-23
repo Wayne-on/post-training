@@ -37,18 +37,21 @@ def read_json(path: Path) -> dict[str, Any]:
         return json.load(f)
 
 
-def get_dataset_file(config: dict[str, Any], repo_dir: Path) -> Path | None:
+def get_dataset_info(config: dict[str, Any], repo_dir: Path) -> dict[str, Any]:
     dataset_dir = as_path(str(config.get("dataset_dir", "data")), repo_dir)
     dataset_name = str(config.get("dataset", "")).split(",")[0].strip()
-    if not dataset_name:
-        return None
-
     info_path = dataset_dir / "dataset_info.json"
-    if not info_path.exists():
-        return None
+    if not dataset_name or not info_path.exists():
+        return {}
 
     info = read_json(info_path)
     dataset_info = info.get(dataset_name, {})
+    return dataset_info if isinstance(dataset_info, dict) else {}
+
+
+def get_dataset_file(config: dict[str, Any], repo_dir: Path) -> Path | None:
+    dataset_dir = as_path(str(config.get("dataset_dir", "data")), repo_dir)
+    dataset_info = get_dataset_info(config, repo_dir)
     file_name = dataset_info.get("file_name")
     if not file_name:
         return None
@@ -56,18 +59,13 @@ def get_dataset_file(config: dict[str, Any], repo_dir: Path) -> Path | None:
 
 
 def get_dataset_columns(config: dict[str, Any], repo_dir: Path) -> dict[str, str]:
-    dataset_dir = as_path(str(config.get("dataset_dir", "data")), repo_dir)
-    dataset_name = str(config.get("dataset", "")).split(",")[0].strip()
-    info_path = dataset_dir / "dataset_info.json"
-    if not dataset_name or not info_path.exists():
-        return {"prompt": "instruction", "query": "input", "response": "output"}
-
-    info = read_json(info_path)
-    columns = info.get(dataset_name, {}).get("columns", {})
+    dataset_info = get_dataset_info(config, repo_dir)
+    columns = dataset_info.get("columns", {})
     return {
         "prompt": columns.get("prompt", "instruction"),
         "query": columns.get("query", "input"),
         "response": columns.get("response", "output"),
+        "messages": columns.get("messages", "messages"),
     }
 
 
@@ -103,25 +101,37 @@ def count_tokens(config: dict[str, Any], repo_dir: Path) -> dict[str, Any]:
     max_samples = config.get("max_samples")
     max_samples_int = int(max_samples) if max_samples is not None else None
     rows = read_jsonl(dataset_file, max_samples_int)
+    dataset_info = get_dataset_info(config, repo_dir)
     columns = get_dataset_columns(config, repo_dir)
     tokenizer = load_tokenizer(config)
     cutoff_len = int(config.get("cutoff_len", 2048))
 
     total_tokens = 0
     max_seq_len = 0
+    messages_col = columns["messages"]
+    is_messages_dataset = False
+    if rows:
+        is_messages_dataset = dataset_info.get("formatting") == "sharegpt" or messages_col in rows[0]
     prompt_col = columns["prompt"]
     query_col = columns["query"]
     response_col = columns["response"]
 
     for row in rows:
-        prompt = str(row.get(prompt_col, "") or "").strip()
-        query = str(row.get(query_col, "") or "").strip()
-        response = str(row.get(response_col, "") or "").strip()
-        user_content = "\n".join(part for part in (prompt, query) if part)
-        messages = [
-            {"role": "user", "content": user_content},
-            {"role": "assistant", "content": response},
-        ]
+        if is_messages_dataset:
+            messages = row.get(messages_col, [])
+            if not isinstance(messages, list):
+                messages = []
+            text_fallback = "\n".join(str(message.get("content", "")) for message in messages if isinstance(message, dict))
+        else:
+            prompt = str(row.get(prompt_col, "") or "").strip()
+            query = str(row.get(query_col, "") or "").strip()
+            response = str(row.get(response_col, "") or "").strip()
+            user_content = "\n".join(part for part in (prompt, query) if part)
+            messages = [
+                {"role": "user", "content": user_content},
+                {"role": "assistant", "content": response},
+            ]
+            text_fallback = "\n".join(part for part in (user_content, response) if part)
 
         try:
             token_ids = tokenizer.apply_chat_template(
@@ -130,8 +140,7 @@ def count_tokens(config: dict[str, Any], repo_dir: Path) -> dict[str, Any]:
                 add_generation_prompt=False,
             )
         except Exception:
-            text = "\n".join(part for part in (user_content, response) if part)
-            token_ids = tokenizer(text, add_special_tokens=True).input_ids
+            token_ids = tokenizer(text_fallback, add_special_tokens=True).input_ids
 
         seq_len = min(len(token_ids), cutoff_len)
         total_tokens += seq_len
@@ -145,6 +154,7 @@ def count_tokens(config: dict[str, Any], repo_dir: Path) -> dict[str, Any]:
         "total_train_tokens_estimated": int(total_tokens * epochs),
         "avg_tokens_per_sample_estimated": (total_tokens / len(rows)) if rows else None,
         "max_tokens_per_sample_capped": max_seq_len,
+        "dataset_format": "messages" if is_messages_dataset else "prompt_response",
         "token_count_note": "Estimated with the model tokenizer and chat template, capped by cutoff_len.",
     }
 

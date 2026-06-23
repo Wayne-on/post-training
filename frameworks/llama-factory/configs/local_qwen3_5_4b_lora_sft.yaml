@@ -14,7 +14,7 @@ deepspeed: configs/deepspeed/zero2_bf16.json
 
 ### dataset
 dataset_dir: frameworks/llama-factory/data
-dataset: posttrain_sft
+dataset: posttrain_sft_messages
 template: qwen3_nothink
 cutoff_len: 2048
 max_samples: 10000

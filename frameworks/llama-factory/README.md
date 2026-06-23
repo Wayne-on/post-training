@@ -62,8 +62,8 @@ If you do not have your own SFT data yet, start with the included customer-servi
 
 ```bash
 mkdir -p data frameworks/llama-factory/data
-cp examples/datasets/customer_intent_sft_smoke.jsonl data/sft.jsonl
-cp data/sft.jsonl frameworks/llama-factory/data/sft.jsonl
+cp examples/datasets/customer_intent_sft_smoke.jsonl data/sft_messages.jsonl
+cp data/sft_messages.jsonl frameworks/llama-factory/data/sft_messages.jsonl
 ```
 
 For SFT chat-message data:
