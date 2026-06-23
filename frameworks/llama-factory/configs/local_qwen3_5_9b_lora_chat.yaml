@@ -1,0 +1,15 @@
+### model
+model_name_or_path: /root/nfs/llm-models/Qwen3.5-9B
+adapter_name_or_path: outputs/llamafactory/local-qwen3_5-9b/lora/sft_10k_3ep_messages
+template: qwen3_nothink
+infer_backend: huggingface
+trust_remote_code: true
+
+### method
+finetuning_type: lora
+
+### generation
+do_sample: false
+max_new_tokens: 512
+temperature: 0.1
+top_p: 0.9

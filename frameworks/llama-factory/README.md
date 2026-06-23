@@ -128,6 +128,18 @@ python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/lo
 python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_4b_full_sft.yaml
 ```
 
+Qwen3.5-9B LoRA benchmark uses the same comparable settings:
+
+```bash
+python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_9b_lora_sft.yaml
+```
+
+The local model path is assumed to be:
+
+```text
+/root/nfs/llm-models/Qwen3.5-9B
+```
+
 The wrapper runs `llamafactory-cli train`, samples GPU memory with `nvidia-smi`, estimates tokenizer-counted
 `tokens/s/gpu`, and writes:
 
