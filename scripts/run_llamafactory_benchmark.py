@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -315,6 +316,114 @@ def read_trainer_metrics(output_dir: Path) -> dict[str, Any]:
     return metrics
 
 
+def product(values: list[int] | tuple[int, ...]) -> int:
+    result = 1
+    for value in values:
+        result *= int(value)
+    return result
+
+
+def count_safetensors_parameters(model_dir: Path) -> int | None:
+    if not model_dir.exists() or not model_dir.is_dir():
+        return None
+
+    index_path = model_dir / "model.safetensors.index.json"
+    if index_path.exists():
+        index = read_json(index_path)
+        weight_map = index.get("weight_map", {})
+        filenames = sorted({model_dir / name for name in weight_map.values()})
+    else:
+        filenames = sorted(model_dir.glob("*.safetensors"))
+
+    if not filenames:
+        return None
+
+    try:
+        from safetensors import safe_open
+    except Exception:
+        return None
+
+    total = 0
+    try:
+        for filename in filenames:
+            with safe_open(filename, framework="pt", device="cpu") as handle:
+                for key in handle.keys():
+                    total += product(handle.get_slice(key).get_shape())
+    except Exception:
+        return None
+    return total
+
+
+def estimate_decoder_parameters_from_config(config: dict[str, Any]) -> int | None:
+    try:
+        from transformers import AutoConfig
+
+        model_config = AutoConfig.from_pretrained(
+            str(config["model_name_or_path"]),
+            trust_remote_code=bool(config.get("trust_remote_code", False)),
+        )
+    except Exception:
+        return None
+
+    hidden_size = getattr(model_config, "hidden_size", None)
+    intermediate_size = getattr(model_config, "intermediate_size", None)
+    num_layers = getattr(model_config, "num_hidden_layers", None)
+    vocab_size = getattr(model_config, "vocab_size", None)
+    num_heads = getattr(model_config, "num_attention_heads", None)
+    if not all([hidden_size, intermediate_size, num_layers, vocab_size, num_heads]):
+        return None
+
+    num_kv_heads = getattr(model_config, "num_key_value_heads", num_heads)
+    head_dim = getattr(model_config, "head_dim", int(hidden_size) // int(num_heads))
+    tie_embeddings = bool(getattr(model_config, "tie_word_embeddings", False))
+
+    attention_params = (
+        int(hidden_size) * int(hidden_size)
+        + 2 * int(hidden_size) * int(num_kv_heads) * int(head_dim)
+        + int(hidden_size) * int(hidden_size)
+    )
+    mlp_params = 3 * int(hidden_size) * int(intermediate_size)
+    norm_params = 2 * int(hidden_size)
+    layer_params = attention_params + mlp_params + norm_params
+    embedding_params = int(vocab_size) * int(hidden_size)
+    lm_head_params = 0 if tie_embeddings else int(vocab_size) * int(hidden_size)
+    final_norm_params = int(hidden_size)
+    return int(embedding_params + int(num_layers) * layer_params + final_norm_params + lm_head_params)
+
+
+def get_model_parameter_stats(config: dict[str, Any], repo_dir: Path) -> dict[str, Any]:
+    model_path = Path(str(config["model_name_or_path"]))
+    if not model_path.is_absolute():
+        model_path = repo_dir / model_path
+
+    total_params = count_safetensors_parameters(model_path)
+    source = "safetensors" if total_params is not None else None
+    if total_params is None:
+        total_params = estimate_decoder_parameters_from_config(config)
+        source = "config_estimate" if total_params is not None else None
+
+    if total_params is None:
+        return {}
+
+    return {
+        "model_parameter_count": total_params,
+        "model_parameter_count_billions": total_params / 1_000_000_000,
+        "model_parameter_count_source": source,
+    }
+
+
+def read_train_log_stats(log_path: Path) -> dict[str, Any]:
+    if not log_path.exists():
+        return {}
+
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    stats: dict[str, Any] = {}
+    match = re.search(r"Number of trainable parameters\s*=\s*([0-9,]+)", text)
+    if match:
+        stats["trainable_parameter_count"] = int(match.group(1).replace(",", ""))
+    return stats
+
+
 def build_report(
     config_path: Path,
     config: dict[str, Any],
@@ -323,6 +432,7 @@ def build_report(
     token_stats: dict[str, Any],
     gpu_stats: dict[str, Any],
     trainer_metrics: dict[str, Any],
+    parameter_stats: dict[str, Any],
     command: list[str] | None,
 ) -> dict[str, Any]:
     gpu_count = gpu_stats.get("gpu_count_sampled") or get_visible_gpu_count()
@@ -344,6 +454,10 @@ def build_report(
         "config_path": str(config_path),
         "command": command,
         "model_name_or_path": config.get("model_name_or_path"),
+        "model_parameter_count": parameter_stats.get("model_parameter_count"),
+        "model_parameter_count_billions": parameter_stats.get("model_parameter_count_billions"),
+        "model_parameter_count_source": parameter_stats.get("model_parameter_count_source"),
+        "trainable_parameter_count": parameter_stats.get("trainable_parameter_count"),
         "stage": config.get("stage"),
         "finetuning_type": config.get("finetuning_type"),
         "dataset": config.get("dataset"),
@@ -381,11 +495,15 @@ def write_report(report: dict[str, Any], output_dir: Path, run_dir: Path) -> Non
     report_md = benchmark_dir / "benchmark_metrics.md"
     rows = [
         ("model", report.get("model_name_or_path")),
+        ("model_parameter_count", report.get("model_parameter_count")),
+        ("model_parameter_count_billions", report.get("model_parameter_count_billions")),
         ("finetuning_type", report.get("finetuning_type")),
+        ("trainable_parameter_count", report.get("trainable_parameter_count")),
         ("samples", report.get("sample_count")),
         ("epochs", report.get("num_train_epochs")),
         ("cutoff_len", report.get("cutoff_len")),
         ("global_batch_size_estimated", report.get("global_batch_size_estimated")),
+        ("gpu_names", report.get("gpu_names")),
         ("gpu_count", report.get("gpu_count")),
         ("train_runtime_seconds", report.get("train_runtime_seconds")),
         ("train_samples_per_second", report.get("train_samples_per_second")),
@@ -434,6 +552,9 @@ def main() -> int:
         token_stats = {"token_count_error": repr(exc)}
         print(f"[benchmark] token count failed: {exc}", file=sys.stderr)
 
+    print("[benchmark] counting model parameters...")
+    parameter_stats = get_model_parameter_stats(config, repo_dir)
+
     wall_runtime: float | None = None
     gpu_stats: dict[str, Any] = {}
     command: list[str] | None = None
@@ -455,6 +576,7 @@ def main() -> int:
             return exit_code
 
     trainer_metrics = read_trainer_metrics(output_dir)
+    parameter_stats.update(read_train_log_stats(run_dir / "train.log"))
     if not gpu_stats:
         gpu_stats = {"gpu_count_sampled": get_visible_gpu_count()}
 
@@ -466,6 +588,7 @@ def main() -> int:
         token_stats=token_stats,
         gpu_stats=gpu_stats,
         trainer_metrics=trainer_metrics,
+        parameter_stats=parameter_stats,
         command=command,
     )
     write_report(report, output_dir, run_dir)
@@ -476,7 +599,9 @@ def main() -> int:
     print("[benchmark] key metrics:")
     print(json.dumps(
         {
+            "model_parameter_count": report.get("model_parameter_count"),
             "finetuning_type": report.get("finetuning_type"),
+            "trainable_parameter_count": report.get("trainable_parameter_count"),
             "sample_count": report.get("sample_count"),
             "train_runtime_seconds": report.get("train_runtime_seconds"),
             "train_samples_per_second": report.get("train_samples_per_second"),
