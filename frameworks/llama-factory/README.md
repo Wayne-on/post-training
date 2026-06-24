@@ -152,8 +152,14 @@ Install FlashAttention-2 inside the existing A800 LLaMA-Factory container:
 
 ```bash
 MAX_JOBS=4 python -m pip install flash-attn==2.7.4.post1 --no-build-isolation
+python -m pip install --force-reinstall --no-deps \
+  fla-core==0.4.1 flash-linear-attention==0.4.1
 python -c "import flash_attn; print(flash_attn.__version__)"
 ```
+
+The A800 CUDA 12.1 image uses PyTorch 2.5.1 and Triton 3.1.0. Keep `fla-core` and
+`flash-linear-attention` at 0.4.1 in this image. FLA 0.4.2 uses Triton autotune behavior that is incompatible with
+this Triton version and can fail during import with `ValueError: 'STAGE' is not in list`.
 
 The FA2 configs change only `flash_attn` and `output_dir`; all dataset, batch, epoch, cutoff length, LoRA,
 learning-rate, and DeepSpeed settings remain aligned with the baseline configs:
