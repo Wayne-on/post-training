@@ -140,6 +140,12 @@ Qwen3.5-9B full-parameter SFT benchmark uses ZeRO-3 BF16 with the same data and 
 python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft.yaml
 ```
 
+Qwen3.5-9B full-parameter ZeRO-2 comparison keeps the same training settings and writes to a separate output directory:
+
+```bash
+python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft_zero2.yaml
+```
+
 ## FlashAttention-2 Comparison
 
 Install FlashAttention-2 inside the existing A800 LLaMA-Factory container:

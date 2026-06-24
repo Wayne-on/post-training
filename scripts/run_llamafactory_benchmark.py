@@ -436,6 +436,26 @@ def get_model_parameter_stats(config: dict[str, Any], repo_dir: Path) -> dict[st
     }
 
 
+def get_deepspeed_stats(config: dict[str, Any], repo_dir: Path) -> dict[str, Any]:
+    deepspeed_config = config.get("deepspeed")
+    if not deepspeed_config:
+        return {}
+
+    stats: dict[str, Any] = {"deepspeed_config": str(deepspeed_config)}
+    path = as_path(str(deepspeed_config), repo_dir)
+    if not path.exists():
+        return stats
+
+    try:
+        data = read_json(path)
+        zero_optimization = data.get("zero_optimization", {})
+        if isinstance(zero_optimization, dict):
+            stats["deepspeed_zero_stage"] = zero_optimization.get("stage")
+    except Exception:
+        pass
+    return stats
+
+
 def read_train_log_stats(log_path: Path) -> dict[str, Any]:
     if not log_path.exists():
         return {}
@@ -507,6 +527,8 @@ def build_report(
         "model_parameter_count_source": parameter_stats.get("model_parameter_count_source"),
         "trainable_parameter_count": parameter_stats.get("trainable_parameter_count"),
         "flash_attn": config.get("flash_attn", "auto"),
+        "deepspeed_config": parameter_stats.get("deepspeed_config"),
+        "deepspeed_zero_stage": parameter_stats.get("deepspeed_zero_stage"),
         "stage": config.get("stage"),
         "finetuning_type": config.get("finetuning_type"),
         "dataset": config.get("dataset"),
@@ -548,6 +570,8 @@ def write_report(report: dict[str, Any], output_dir: Path, run_dir: Path) -> Non
         ("model_parameter_count_billions", report.get("model_parameter_count_billions")),
         ("finetuning_type", report.get("finetuning_type")),
         ("flash_attn", report.get("flash_attn")),
+        ("deepspeed_config", report.get("deepspeed_config")),
+        ("deepspeed_zero_stage", report.get("deepspeed_zero_stage")),
         ("trainable_parameter_count", report.get("trainable_parameter_count")),
         ("samples", report.get("sample_count")),
         ("epochs", report.get("num_train_epochs")),
@@ -604,6 +628,7 @@ def main() -> int:
 
     print("[benchmark] counting model parameters...")
     parameter_stats = get_model_parameter_stats(config, repo_dir)
+    parameter_stats.update(get_deepspeed_stats(config, repo_dir))
     previous_report = read_previous_benchmark(output_dir) if args.no_train else {}
 
     wall_runtime: float | None = None
@@ -658,6 +683,7 @@ def main() -> int:
         {
             "model_parameter_count": report.get("model_parameter_count"),
             "finetuning_type": report.get("finetuning_type"),
+            "deepspeed_zero_stage": report.get("deepspeed_zero_stage"),
             "trainable_parameter_count": report.get("trainable_parameter_count"),
             "sample_count": report.get("sample_count"),
             "train_runtime_seconds": report.get("train_runtime_seconds"),
