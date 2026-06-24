@@ -96,7 +96,7 @@ services:
     tty: true
     stdin_open: true
     working_dir: ${CONTAINER_WORKDIR:-/root/post-training}
-    command: ["sleep", "infinity"]
+    command: ["bash", "scripts/bootstrap_llamafactory_container.sh"]
     ports:
       - "${LLAMA_FACTORY_API_PORT:-32002}:8000"
       - "${LLAMA_FACTORY_TENSORBOARD_PORT:-32006}:6006"
@@ -116,6 +116,12 @@ services:
       - ${PROJECT_DIR:-.}:${CONTAINER_WORKDIR:-/root/post-training}
       - ${NFS_MOUNT:-/data/test-files}:/root/nfs
       - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "from torch.utils.tensorboard import SummaryWriter"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 10s
     deploy:
       resources:
         reservations:

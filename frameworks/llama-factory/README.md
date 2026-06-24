@@ -16,9 +16,13 @@ Keep the custom HF/TRL scripts in `src/post_training/` for algorithm debugging a
 ```bash
 cp .env.a800-cu121.example .env
 docker compose build llamafactory
-docker compose up -d llamafactory
+docker compose up -d --wait llamafactory
 docker exec -it posttrain_lf bash
 ```
+
+The Compose service runs `scripts/bootstrap_llamafactory_container.sh` before entering its idle state. When an older
+local image does not contain TensorBoard, the bootstrap installs `tensorboard==2.19.0`; the health check prevents
+`docker compose up --wait` from completing until `torch.utils.tensorboard` imports successfully.
 
 Before `docker compose up`, edit the server-side `.env` if needed:
 
