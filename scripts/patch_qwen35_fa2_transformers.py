@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import shutil
 from pathlib import Path
@@ -35,6 +36,40 @@ def patch_file(path: Path, replacements: list[tuple[str, str]]) -> bool:
     return True
 
 
+def patch_position_ids_guard(path: Path) -> bool:
+    text = path.read_text(encoding="utf-8-sig")
+    tree = ast.parse(text)
+    function = next(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_is_packed_sequence"
+        ),
+        None,
+    )
+    if function is None or not function.body:
+        raise RuntimeError(f"Could not find _is_packed_sequence() in {path}")
+
+    function_text = ast.get_source_segment(text, function) or ""
+    if "position_ids.dim() > 2" in function_text or "position_ids.ndim > 2" in function_text:
+        return False
+
+    lines = text.splitlines(keepends=True)
+    first_body_index = function.body[0].lineno - 1
+    indentation = lines[first_body_index][: len(lines[first_body_index]) - len(lines[first_body_index].lstrip())]
+    guard = (
+        f"{indentation}if position_ids is not None and position_ids.dim() > 2:\n"
+        f"{indentation}    return False\n"
+    )
+    lines.insert(first_body_index, guard)
+
+    backup = path.with_suffix(path.suffix + ".qwen35_fa2.bak")
+    if not backup.exists():
+        shutil.copy2(path, backup)
+    path.write_text("".join(lines), encoding="utf-8")
+    return True
+
+
 def main() -> None:
     root = transformers_root()
 
@@ -54,21 +89,7 @@ def main() -> None:
     )
 
     flash_utils = root / "modeling_flash_attention_utils.py"
-    position_ids_changed = patch_file(
-        flash_utils,
-        [
-            (
-                "    if position_ids is None:\n"
-                "        return False\n"
-                "    increasing_position_sequences = (\n",
-                "    if position_ids is None:\n"
-                "        return False\n"
-                "    if position_ids.dim() > 2:\n"
-                "        return False\n"
-                "    increasing_position_sequences = (\n",
-            )
-        ],
-    )
+    position_ids_changed = patch_position_ids_guard(flash_utils)
 
     print(f"transformers root: {root}")
     print(f"s_aux guard patched: {s_aux_changed}")
