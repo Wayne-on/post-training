@@ -1,0 +1,42 @@
+### model
+model_name_or_path: /root/nfs/llm-models/Qwen3.5-9B
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: full
+deepspeed: configs/deepspeed/zero3_bf16.json
+
+### dataset
+dataset_dir: frameworks/llama-factory/data
+dataset: posttrain_sft_messages_8k
+template: qwen3_nothink
+cutoff_len: 8192
+packing: false
+max_samples: 10000
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 4
+
+### output
+output_dir: outputs/llamafactory/local-qwen3_5-9b/full/sft_10k_1ep_8k_zero3_bs4_ga2
+logging_steps: 5
+save_steps: 100
+save_total_limit: 1
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: true
+report_to: tensorboard
+
+### train
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 2
+learning_rate: 1.0e-5
+num_train_epochs: 1.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.03
+bf16: true
+gradient_checkpointing: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null

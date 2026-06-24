@@ -247,6 +247,16 @@ benchmark and avoids spending three times the compute on repeated data. These sy
 training-system and long-context efficiency evaluation, not a replacement for production-quality conversational SFT
 data.
 
+The ZeRO-3 8K batch-shape experiment keeps global batch size 64 while increasing the per-device micro batch:
+
+```bash
+python scripts/run_llamafactory_benchmark.py \
+  frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft_8k_zero3.yaml
+```
+
+This uses `per_device_train_batch_size=4` and `gradient_accumulation_steps=2`. It has a much higher activation-memory
+risk than the `1 x 8` baseline and should be treated as a feasibility run.
+
 The local model path is assumed to be:
 
 ```text
