@@ -185,6 +185,39 @@ Start with the 9B full-parameter config to validate model support and measure th
 memory footprint. The current dataset averages about 146 tokens per sample, so FA2 may provide only a small speedup;
 its advantage should become clearer in a separate benchmark with longer effective sequence lengths.
 
+### 8K Multi-Turn Benchmark
+
+Generate 10,000 synthetic multi-turn customer-service conversations whose tokenizer-counted lengths are constrained
+to 8,000-8,192 tokens:
+
+```bash
+python scripts/build_customer_intent_multiturn_8k.py \
+  --model-name-or-path /root/nfs/llm-models/Qwen3.5-9B \
+  --output frameworks/llama-factory/data/sft_messages_8k.jsonl \
+  --samples 10000 \
+  --target-tokens 8064 \
+  --min-tokens 8000 \
+  --max-tokens 8192
+```
+
+Inspect the generated length report before training:
+
+```bash
+cat frameworks/llama-factory/data/sft_messages_8k.jsonl.stats.json
+```
+
+Run the ZeRO-3 baseline and FA2 comparison:
+
+```bash
+python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft_8k.yaml
+python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft_8k_fa2.yaml
+```
+
+Both 8K jobs use one epoch. At approximately 80 million tokens per epoch, one epoch is sufficient for a throughput
+benchmark and avoids spending three times the compute on repeated data. These synthetic long conversations are for
+training-system and long-context efficiency evaluation, not a replacement for production-quality conversational SFT
+data.
+
 The local model path is assumed to be:
 
 ```text

@@ -6,10 +6,27 @@ Expected files:
 
 - `sft.jsonl`
 - `sft_messages.jsonl`
+- `sft_messages_8k.jsonl`
 - `dpo.jsonl`
 
 The dataset names are defined in `dataset_info.json`:
 
 - `posttrain_sft`
 - `posttrain_sft_messages`
+- `posttrain_sft_messages_8k`
 - `posttrain_dpo`
+
+Generate the synthetic 8K multi-turn customer-service benchmark dataset with the tokenizer from the local Qwen3.5
+model:
+
+```bash
+python scripts/build_customer_intent_multiturn_8k.py \
+  --model-name-or-path /root/nfs/llm-models/Qwen3.5-9B \
+  --output frameworks/llama-factory/data/sft_messages_8k.jsonl \
+  --samples 10000 \
+  --target-tokens 8064 \
+  --min-tokens 8000 \
+  --max-tokens 8192
+```
+
+The generated JSONL and its `.stats.json` report are local artifacts and are intentionally excluded from git.

@@ -16,5 +16,7 @@ models/
 outputs/
 runs/
 wandb/
+examples/datasets/customer_intent_sft_multiturn_8k_10k.jsonl
+examples/datasets/customer_intent_sft_multiturn_8k_10k.jsonl.stats.json
 *.log
 *.safetensors.tmp

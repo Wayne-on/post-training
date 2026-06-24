@@ -6,9 +6,11 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import os
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 import threading
@@ -133,6 +135,7 @@ def count_tokens(config: dict[str, Any], repo_dir: Path) -> dict[str, Any]:
 
     total_tokens = 0
     max_seq_len = 0
+    sequence_lengths: list[int] = []
     messages_col = columns["messages"]
     is_messages_dataset = False
     if rows:
@@ -170,14 +173,26 @@ def count_tokens(config: dict[str, Any], repo_dir: Path) -> dict[str, Any]:
         seq_len = min(get_token_sequence_length(tokenized), cutoff_len)
         total_tokens += seq_len
         max_seq_len = max(max_seq_len, seq_len)
+        sequence_lengths.append(seq_len)
 
     epochs = float(config.get("num_train_epochs", 1.0))
+    ordered_lengths = sorted(sequence_lengths)
+
+    def nearest_rank(percentile: float) -> int | None:
+        if not ordered_lengths:
+            return None
+        rank = max(1, math.ceil(percentile * len(ordered_lengths)))
+        return ordered_lengths[rank - 1]
+
     return {
         "dataset_file": str(dataset_file),
         "sample_count": len(rows),
         "tokens_per_epoch_estimated": total_tokens,
         "total_train_tokens_estimated": int(total_tokens * epochs),
         "avg_tokens_per_sample_estimated": (total_tokens / len(rows)) if rows else None,
+        "min_tokens_per_sample_capped": min(sequence_lengths) if sequence_lengths else None,
+        "p50_tokens_per_sample_capped": statistics.median(sequence_lengths) if sequence_lengths else None,
+        "p95_tokens_per_sample_capped": nearest_rank(0.95),
         "max_tokens_per_sample_capped": max_seq_len,
         "dataset_format": "messages" if is_messages_dataset else "prompt_response",
         "token_count_note": "Estimated with the model tokenizer and chat template, capped by cutoff_len.",
@@ -582,6 +597,11 @@ def write_report(report: dict[str, Any], output_dir: Path, run_dir: Path) -> Non
         ("train_runtime_seconds", report.get("train_runtime_seconds")),
         ("train_samples_per_second", report.get("train_samples_per_second")),
         ("tokens_per_second_per_gpu_estimated", report.get("tokens_per_second_per_gpu_estimated")),
+        ("avg_tokens_per_sample_estimated", report.get("avg_tokens_per_sample_estimated")),
+        ("min_tokens_per_sample_capped", report.get("min_tokens_per_sample_capped")),
+        ("p50_tokens_per_sample_capped", report.get("p50_tokens_per_sample_capped")),
+        ("p95_tokens_per_sample_capped", report.get("p95_tokens_per_sample_capped")),
+        ("max_tokens_per_sample_capped", report.get("max_tokens_per_sample_capped")),
         ("peak_memory_used_mib_max", report.get("peak_memory_used_mib_max")),
         ("train_loss", report.get("train_loss")),
     ]

@@ -28,6 +28,20 @@
       "system_tag": "system"
     }
   },
+  "posttrain_sft_messages_8k": {
+    "file_name": "sft_messages_8k.jsonl",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
   "posttrain_dpo": {
     "file_name": "dpo.jsonl",
     "ranking": true,
