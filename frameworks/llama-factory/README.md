@@ -227,6 +227,15 @@ python scripts/run_llamafactory_benchmark.py \
   frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft_8k_fa2_smoke.yaml
 ```
 
+For the 9B full-parameter 8K ZeRO-2 experiment, validate the higher-memory setup before the full run:
+
+```bash
+python scripts/run_llamafactory_benchmark.py \
+  frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft_8k_zero2_smoke.yaml
+python scripts/run_llamafactory_benchmark.py \
+  frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft_8k_zero2.yaml
+```
+
 Both 8K jobs use one epoch. At approximately 80 million tokens per epoch, one epoch is sufficient for a throughput
 benchmark and avoids spending three times the compute on repeated data. These synthetic long conversations are for
 training-system and long-context efficiency evaluation, not a replacement for production-quality conversational SFT
