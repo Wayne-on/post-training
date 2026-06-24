@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -94,6 +95,29 @@ def load_tokenizer(config: dict[str, Any]):
     )
 
 
+def get_token_sequence_length(tokenized: Any) -> int:
+    if isinstance(tokenized, Mapping):
+        tokenized = tokenized.get("input_ids")
+    elif hasattr(tokenized, "input_ids"):
+        tokenized = tokenized.input_ids
+
+    shape = getattr(tokenized, "shape", None)
+    if shape is not None:
+        dimensions = tuple(int(value) for value in shape)
+        if not dimensions:
+            return 1
+        return dimensions[-1]
+
+    if isinstance(tokenized, (list, tuple)):
+        if not tokenized:
+            return 0
+        if isinstance(tokenized[0], (list, tuple)):
+            return len(tokenized[0])
+        return len(tokenized)
+
+    raise TypeError(f"Unsupported tokenized output type: {type(tokenized).__name__}")
+
+
 def count_tokens(config: dict[str, Any], repo_dir: Path) -> dict[str, Any]:
     dataset_file = get_dataset_file(config, repo_dir)
     if dataset_file is None or not dataset_file.exists():
@@ -135,15 +159,15 @@ def count_tokens(config: dict[str, Any], repo_dir: Path) -> dict[str, Any]:
             text_fallback = "\n".join(part for part in (user_content, response) if part)
 
         try:
-            token_ids = tokenizer.apply_chat_template(
+            tokenized = tokenizer.apply_chat_template(
                 messages,
                 tokenize=True,
                 add_generation_prompt=False,
             )
         except Exception:
-            token_ids = tokenizer(text_fallback, add_special_tokens=True).input_ids
+            tokenized = tokenizer(text_fallback, add_special_tokens=True)
 
-        seq_len = min(len(token_ids), cutoff_len)
+        seq_len = min(get_token_sequence_length(tokenized), cutoff_len)
         total_tokens += seq_len
         max_seq_len = max(max_seq_len, seq_len)
 
@@ -424,6 +448,30 @@ def read_train_log_stats(log_path: Path) -> dict[str, Any]:
     return stats
 
 
+def read_previous_benchmark(output_dir: Path) -> dict[str, Any]:
+    path = output_dir / "benchmark" / "benchmark_metrics.json"
+    if not path.exists():
+        return {}
+    try:
+        return read_json(path)
+    except Exception:
+        return {}
+
+
+def get_previous_gpu_stats(report: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "gpu_count_sampled",
+        "gpu_names",
+        "peak_memory_used_mib_per_gpu",
+        "memory_total_mib_per_gpu",
+        "peak_memory_used_mib_max",
+    )
+    stats = {key: report[key] for key in keys if report.get(key) is not None}
+    if "gpu_count_sampled" not in stats and report.get("gpu_count") is not None:
+        stats["gpu_count_sampled"] = report["gpu_count"]
+    return stats
+
+
 def build_report(
     config_path: Path,
     config: dict[str, Any],
@@ -554,6 +602,7 @@ def main() -> int:
 
     print("[benchmark] counting model parameters...")
     parameter_stats = get_model_parameter_stats(config, repo_dir)
+    previous_report = read_previous_benchmark(output_dir) if args.no_train else {}
 
     wall_runtime: float | None = None
     gpu_stats: dict[str, Any] = {}
@@ -574,8 +623,14 @@ def main() -> int:
         if exit_code != 0:
             print(f"[benchmark] training failed with exit code {exit_code}", file=sys.stderr)
             return exit_code
+    else:
+        wall_runtime = previous_report.get("wall_runtime_seconds")
+        gpu_stats = get_previous_gpu_stats(previous_report)
+        command = previous_report.get("command")
 
     trainer_metrics = read_trainer_metrics(output_dir)
+    if previous_report.get("trainable_parameter_count") is not None:
+        parameter_stats["trainable_parameter_count"] = previous_report["trainable_parameter_count"]
     parameter_stats.update(read_train_log_stats(run_dir / "train.log"))
     if not gpu_stats:
         gpu_stats = {"gpu_count_sampled": get_visible_gpu_count()}
