@@ -140,6 +140,29 @@ Qwen3.5-9B full-parameter SFT benchmark uses ZeRO-3 BF16 with the same data and 
 python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft.yaml
 ```
 
+## FlashAttention-2 Comparison
+
+Install FlashAttention-2 inside the existing A800 LLaMA-Factory container:
+
+```bash
+MAX_JOBS=4 python -m pip install flash-attn==2.7.4.post1 --no-build-isolation
+python -c "import flash_attn; print(flash_attn.__version__)"
+```
+
+The FA2 configs change only `flash_attn` and `output_dir`; all dataset, batch, epoch, cutoff length, LoRA,
+learning-rate, and DeepSpeed settings remain aligned with the baseline configs:
+
+```bash
+python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sft_fa2.yaml
+python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_4b_full_sft_fa2.yaml
+python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_9b_lora_sft_fa2.yaml
+python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft_fa2.yaml
+```
+
+Start with the 9B full-parameter config to validate model support and measure the case with the largest attention
+memory footprint. The current dataset averages about 146 tokens per sample, so FA2 may provide only a small speedup;
+its advantage should become clearer in a separate benchmark with longer effective sequence lengths.
+
 The local model path is assumed to be:
 
 ```text
