@@ -153,13 +153,14 @@ Install FlashAttention-2 inside the existing A800 LLaMA-Factory container:
 ```bash
 MAX_JOBS=4 python -m pip install flash-attn==2.7.4.post1 --no-build-isolation
 python -m pip install --force-reinstall --no-deps \
-  fla-core==0.4.1 flash-linear-attention==0.4.1
+  triton==3.2.0 fla-core==0.4.2 flash-linear-attention==0.4.2
 python -c "import flash_attn; print(flash_attn.__version__)"
 ```
 
-The A800 CUDA 12.1 image uses PyTorch 2.5.1 and Triton 3.1.0. Keep `fla-core` and
-`flash-linear-attention` at 0.4.1 in this image. FLA 0.4.2 uses Triton autotune behavior that is incompatible with
-this Triton version and can fail during import with `ValueError: 'STAGE' is not in list`.
+The A800 CUDA 12.1 base image uses PyTorch 2.5.1 and Triton 3.1.0. FLA 0.4.1 can import with Triton 3.1 but its
+8K Gated Delta Rule backward kernel may fail to compile in `wy_fast.py`. FLA 0.4.2 requires the Triton 3.2 behavior
+for its autotune keys. Use the Triton 3.2 / FLA 0.4.2 combination only in a separate FA2 experiment container because
+PyTorch 2.5.1 normally pins Triton 3.1. Keep the baseline container unchanged.
 
 Qwen3.5 also needs two Transformers FlashAttention compatibility guards in affected releases. Apply the idempotent
 patch after installing the dependencies:
@@ -211,6 +212,15 @@ Run the ZeRO-3 baseline and FA2 comparison:
 ```bash
 python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft_8k.yaml
 python scripts/run_llamafactory_benchmark.py frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft_8k_fa2.yaml
+```
+
+Before either full run, validate one forward/backward optimizer step:
+
+```bash
+python scripts/run_llamafactory_benchmark.py \
+  frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft_8k_smoke.yaml
+python scripts/run_llamafactory_benchmark.py \
+  frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft_8k_fa2_smoke.yaml
 ```
 
 Both 8K jobs use one epoch. At approximately 80 million tokens per epoch, one epoch is sufficient for a throughput
