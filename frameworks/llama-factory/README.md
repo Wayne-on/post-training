@@ -161,6 +161,16 @@ The A800 CUDA 12.1 image uses PyTorch 2.5.1 and Triton 3.1.0. Keep `fla-core` an
 `flash-linear-attention` at 0.4.1 in this image. FLA 0.4.2 uses Triton autotune behavior that is incompatible with
 this Triton version and can fail during import with `ValueError: 'STAGE' is not in list`.
 
+Qwen3.5 also needs two Transformers FlashAttention compatibility guards in affected releases. Apply the idempotent
+patch after installing the dependencies:
+
+```bash
+python scripts/patch_qwen35_fa2_transformers.py
+```
+
+The patch guards an optional `s_aux` tensor and prevents Qwen3.5's 3D position IDs from being misclassified as a
+packed sequence. It creates `.qwen35_fa2.bak` backups beside modified Transformers files.
+
 The FA2 configs change only `flash_attn` and `output_dir`; all dataset, batch, epoch, cutoff length, LoRA,
 learning-rate, and DeepSpeed settings remain aligned with the baseline configs:
 
