@@ -230,11 +230,17 @@ python scripts/run_llamafactory_benchmark.py \
 For the 9B full-parameter 8K ZeRO-2 experiment, validate the higher-memory setup before the full run:
 
 ```bash
+DIST_CHECK_NUMEL=25000000 DIST_CHECK_DTYPE=bf16 DIST_CHECK_ITERS=3 \
+  torchrun --nproc_per_node=8 scripts/distributed_check.py
+
 python scripts/run_llamafactory_benchmark.py \
   frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft_8k_zero2_smoke.yaml
 python scripts/run_llamafactory_benchmark.py \
   frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft_8k_zero2.yaml
 ```
+
+The 8K ZeRO-2 jobs use `zero2_bf16_8k.json`: 25M-element communication buckets and `overlap_comm=false`.
+This avoids queueing a near-200M-element asynchronous gradient collective behind the slow 8K fallback backward path.
 
 Both 8K jobs use one epoch. At approximately 80 million tokens per epoch, one epoch is sufficient for a throughput
 benchmark and avoids spending three times the compute on repeated data. These synthetic long conversations are for
