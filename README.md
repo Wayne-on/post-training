@@ -110,6 +110,10 @@ fla-core==0.4.2
 flash-linear-attention==0.4.2
 ```
 
+The FA2 service disables `torch.compile`/TorchDynamo by default because FLA
+imports optional compiled helpers at module import time, while the FA2 image
+pins Triton for FLA compatibility.
+
 Verify the environment inside the FA2 container:
 
 ```bash

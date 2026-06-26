@@ -165,6 +165,8 @@ services:
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       NCCL_DEBUG: WARN
       TOKENIZERS_PARALLELISM: "false"
+      TORCH_COMPILE_DISABLE: "1"
+      TORCHDYNAMO_DISABLE: "1"
     volumes:
       - ${PROJECT_DIR:-.}:${CONTAINER_WORKDIR:-/root/post-training}
       - ${NFS_MOUNT:-/data/test-files}:/root/nfs

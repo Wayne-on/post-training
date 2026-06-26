@@ -1,7 +1,14 @@
 #!/usr/bin/env python
 """Verify the isolated LLaMA-Factory FlashAttention-2 environment."""
 
+import os
 from importlib.metadata import version
+
+# FLA imports decorate some optional attention helpers with torch.compile.
+# The FA2 container pins Triton for FLA, which can be incompatible with the
+# PyTorch-bundled Inductor path, so keep torch.compile disabled for this env.
+os.environ.setdefault("TORCH_COMPILE_DISABLE", "1")
+os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 
 import flash_attn
 import torch
