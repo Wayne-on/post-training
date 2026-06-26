@@ -1,6 +1,6 @@
 # LLM 微调效率评估报告
 
-报告日期：2026-06-24
+报告日期：2026-06-26
 
 ## 1. 任务目标
 
@@ -86,30 +86,35 @@ Qwen3.5-9B Full 的 ZeRO-2 吞吐高于 ZeRO-3，`tokens/s/GPU` 从 84.50 提升
 
 Qwen3.5-9B Full + ZeRO-3 + 8K 已稳定完成多个 optimization steps，单卡显存未达到 80GB 上限，验证了 8K 全参数训练可行性。ZeRO-2 在首个 backward 阶段发生 NCCL ALLREDUCE 超时，日志未出现 CUDA OOM；初步判断为 8K 反向重计算耗时与 ZeRO-2 大规模梯度同步叠加导致 rank 间同步超时，暂未继续调参。
 
-### 3.2 ZeRO-3 8K Micro Batch 对比
+### 3.2 ZeRO-3 8K Micro Batch 与 FA2 对比
 
-三组实验保持 global batch size 64，只调整单卡 micro batch 和梯度累积次数。
+下表均为 Qwen3.5-9B Full SFT、8K 长序列、ZeRO-3 配置。`BS2/GA4` 与 `BS2/GA4 + FA2` 均已完成完整 1 epoch，可直接按全流程平均吞吐对比。
 
-| 项目 | BS1 / GA8 | BS4 / GA2 | BS2 / GA4 |
-| --- | ---: | ---: | ---: |
-| DeepSpeed | ZeRO-3 | ZeRO-3 | ZeRO-3 |
-| Per-device batch size | 1 | 4 | 2 |
-| GPU 数量 | 8 | 8 | 8 |
-| 单次全局 micro batch | 8 | 32 | 16 |
-| Gradient accumulation | 8 | 2 | 4 |
-| Global batch size | 64 | 64 | 64 |
-| 有效序列长度 | 8,000～8,192 tokens | 8,000～8,192 tokens | 8,000～8,192 tokens |
-| 验证进度 | 至少 15 steps | 启动后 OOM | 至少 25 steps |
-| 单卡峰值显存 | 约 56.0～58.4 GiB | 未形成有效统计 | 约 75.76 GiB |
-| GPU 利用率 | 预热后约 76%～85% | 未形成稳定统计 | 约 92%～100% |
-| 单步耗时 | 稳定后约 169～171 秒 | N/A | 首步约 170 秒，稳定后约 152.7～153.8 秒 |
-| Tokens/s/GPU | 约 379～382，阶段性估算 | N/A | 约 419～422，阶段性估算 |
-| 是否 OOM | 否 | 是 | 否 |
-| 结论 | 具备可行性 | 当前显存条件下不可行 | 具备可行性，吞吐更高但显存余量较小 |
+| 项目 | BS1 / GA8 | BS4 / GA2 | BS2 / GA4 | BS2 / GA4 + FA2 |
+| --- | ---: | ---: | ---: | ---: |
+| DeepSpeed | ZeRO-3 | ZeRO-3 | ZeRO-3 | ZeRO-3 |
+| FlashAttention-2 | 否 | 否 | 否 | 是 |
+| Per-device batch size | 1 | 4 | 2 | 2 |
+| GPU 数量 | 8 | 8 | 8 | 8 |
+| 单次全局 micro batch | 8 | 32 | 16 | 16 |
+| Gradient accumulation | 8 | 2 | 4 | 4 |
+| Global batch size | 64 | 64 | 64 | 64 |
+| 有效序列长度 | 8,000～8,192 tokens | 8,000～8,192 tokens | 8,000～8,192 tokens | 8,000～8,192 tokens |
+| 验证进度 | 至少 15 steps | 启动后 OOM | 完整 1 epoch | 完整 1 epoch |
+| 训练耗时 | N/A | N/A | 6.64 h | 1.07 h |
+| Samples/s | N/A | N/A | 0.418 | 2.605 |
+| Tokens/s/GPU | 约 379～382，阶段性估算 | N/A | **423.24** | **2636.34** |
+| 平均 token/sample | N/A | N/A | 约 8,096.67 | 约 8,096.67 |
+| 单卡峰值显存 | 约 56.0～58.4 GiB | 未形成有效统计 | 75.77 GiB | 78.33 GiB |
+| GPU 利用率 | 预热后约 76%～85% | 未形成稳定统计 | 约 92%～100% | 100% |
+| 平均单步耗时 | 稳定后约 169～171 秒 | N/A | 约 152.31 秒 | 约 24.45 秒 |
+| Train loss | N/A | N/A | 0.03889 | 0.03880 |
+| 是否 OOM | 否 | 是 | 否 | 否 |
+| 结论 | 具备可行性 | 当前显存条件下不可行 | 可完整训练 | 可完整训练，吞吐显著提升 |
 
-`BS4/GA2` 在 8K 全参数训练中发生 CUDA OOM，说明单卡 micro batch 4 超出当前 80GB 显存条件下的可用范围。将配置调整为 `BS2/GA4` 后，global batch size 仍保持 64，并成功运行至少 25 个 optimization steps；稳定单步耗时缩短至约 153 秒，GPU 利用率提高至 92%～100%，但单卡峰值显存达到约 75.76 GiB，距离 80GB 上限仅余约 4.24 GiB。
+`BS4/GA2` 在 8K 全参数训练中发生 CUDA OOM，说明单卡 micro batch 4 超出当前 80GB 显存条件下的可用范围。将配置调整为 `BS2/GA4` 后，global batch size 仍保持 64，非 FA2 与 FA2 均可完成完整 1 epoch。
 
-上述 8K `Tokens/s/GPU` 根据阶段性单步耗时和有效训练 token 数估算，用于短时可行性对比，不等同于完整训练结束后按总 token 数和总运行时间计算的全流程平均吞吐。
+在相同 `BS2/GA4`、ZeRO-3、8K 数据和 global batch size 64 下，FA2 将全流程平均吞吐从 423.24 tokens/s/GPU 提升至 2636.34 tokens/s/GPU，约提升 6.23 倍；训练耗时从 6.64 小时缩短至 1.07 小时。代价是单卡峰值显存从 75.77 GiB 增加至 78.33 GiB，显存余量进一步收紧。
 
 ## 4. 对比分析
 
@@ -148,7 +153,11 @@ LoRA 在 4B 和 9B 模型上表现出稳定、接近的效率收益：
 
 在 2K 主实验中，ZeRO-2 的吞吐为 127.17 tokens/s/GPU，高于 ZeRO-3 的 84.50 tokens/s/GPU；代价是单卡峰值显存由 35.38 GiB 增加到 48.34 GiB。说明在显存容量允许时，ZeRO-2 可以减少参数分片和聚合带来的通信开销；ZeRO-3 更节省显存，更适合长序列或更大模型。
 
-8K 补充验证中，ZeRO-3 已验证可持续完成训练 step；ZeRO-2 初始配置在首个 backward 阶段发生 NCCL ALLREDUCE 超时。长序列正式实验优先采用 ZeRO-3。
+8K 补充验证中，ZeRO-3 已完成完整 1 epoch 训练；ZeRO-2 初始配置在首个 backward 阶段发生 NCCL ALLREDUCE 超时。长序列正式实验优先采用 ZeRO-3。
+
+### 4.4 FlashAttention-2 对 8K 训练的影响
+
+在 Qwen3.5-9B Full、8K、ZeRO-3、BS2/GA4 的相同配置下，启用 FA2 后训练耗时由 6.64 小时缩短至 1.07 小时，`tokens/s/GPU` 由 423.24 提升至 2636.34，约提升 6.23 倍。FA2 主要优化长序列 attention 计算，因此在 8K 场景下收益明显；但峰值显存由 75.77 GiB 增加至 78.33 GiB，说明该配置已经非常接近 A800 80GB 单卡容量上限。
 
 ## 5. 结论
 
@@ -156,10 +165,11 @@ LoRA 在 4B 和 9B 模型上表现出稳定、接近的效率收益：
 2. LoRA 是本次实验中训练效率更高的方案，4B 和 9B 均达到约 124 至 126 tokens/s/gpu。
 3. ZeRO-3 全参数训练吞吐约为 84.5 tokens/s/GPU，训练时间约 1.8 小时，并需要更高显存。
 4. 9B Full 2K 场景中，ZeRO-2 吞吐更高，ZeRO-3 显存占用更低；策略选择应结合显存余量和训练稳定性。
-5. 9B Full + ZeRO-3 已验证 8K 全参数训练可行性；`BS4/GA2` 发生 OOM，`BS2/GA4` 可稳定运行且阶段性吞吐提升至约 419～422 tokens/s/GPU，但显存峰值已达到约 75.76 GiB。
-6. 对需要快速迭代、频繁更新或并行开展多组实验的业务，建议优先采用 LoRA。
-7. 本报告评估的是训练效率，不代表模型效果结论。模型选型还需结合独立测试集上的意图准确率、槽位抽取准确率、JSON 合法率和回复质量进行综合判断。
+5. 9B Full + ZeRO-3 已验证 8K 全参数训练可行性；`BS4/GA2` 发生 OOM，`BS2/GA4` 可完整训练，非 FA2 吞吐为 423.24 tokens/s/GPU，FA2 吞吐提升至 2636.34 tokens/s/GPU。
+6. FA2 在 8K 长序列场景下显著提升训练吞吐并缩短训练耗时，但峰值显存达到 78.33 GiB，已经接近 A800 80GB 上限。
+7. 对需要快速迭代、频繁更新或并行开展多组实验的业务，建议优先采用 LoRA。
+8. 本报告评估的是训练效率，不代表模型效果结论。模型选型还需结合独立测试集上的意图准确率、槽位抽取准确率、JSON 合法率和回复质量进行综合判断。
 
 ## 6. 汇报摘要
 
-在 8 x A800 80GB 单机多卡环境下，已完成 Qwen3.5-4B、Qwen3.5-9B 的 LoRA 和全参数 SFT 主实验。LoRA 的训练吞吐约为 124 至 126 tokens/s/GPU；9B Full 在 ZeRO-2 下达到 127.17 tokens/s/GPU，但显存高于 ZeRO-3。补充的 8K 验证表明，9B Full + ZeRO-3 在 `BS1/GA8` 和 `BS2/GA4` 下均可稳定训练；`BS2/GA4` 的阶段性吞吐约为 419～422 tokens/s/GPU，峰值显存约 75.76 GiB，而 `BS4/GA2` 会发生 OOM。
+在 8 x A800 80GB 单机多卡环境下，已完成 Qwen3.5-4B、Qwen3.5-9B 的 LoRA 和全参数 SFT 主实验。LoRA 的训练吞吐约为 124 至 126 tokens/s/GPU；9B Full 在 ZeRO-2 下达到 127.17 tokens/s/GPU，但显存高于 ZeRO-3。补充的 8K 验证表明，9B Full + ZeRO-3 在 `BS2/GA4` 下可完成完整 1 epoch；非 FA2 吞吐为 423.24 tokens/s/GPU，FA2 吞吐提升至 2636.34 tokens/s/GPU，训练耗时从 6.64 小时缩短至 1.07 小时，峰值显存从 75.77 GiB 增加至 78.33 GiB。`BS4/GA2` 在当前 80GB 显存条件下会发生 OOM。
