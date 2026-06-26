@@ -21,7 +21,7 @@ preprocessing_num_workers: 16
 dataloader_num_workers: 4
 
 ### output
-output_dir: outputs/llamafactory/local-qwen3_5-9b/full/sft_10k_1ep_8k_zero2_bs2_ga4_fa2
+output_dir: outputs/llamafactory/local-qwen3_5-9b/full/sft_10k_1ep_8k_zero3_bs2_ga4_fa2
 logging_steps: 5
 save_steps: 100
 save_total_limit: 1
