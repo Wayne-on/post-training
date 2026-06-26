@@ -11,6 +11,7 @@ fi
 
 python -c "from torch.utils.tensorboard import SummaryWriter; print('[bootstrap-fa2] TensorBoard import: OK')"
 python scripts/patch_qwen35_fa2_transformers.py
+python scripts/patch_deepspeed_fa2_compile_imports.py
 python scripts/verify_llamafactory_fa2.py
 
 exec sleep infinity

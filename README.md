@@ -113,6 +113,8 @@ flash-linear-attention==0.4.2
 The FA2 service disables `torch.compile`/TorchDynamo by default because FLA
 imports optional compiled helpers at module import time, while the FA2 image
 pins Triton for FLA compatibility.
+It also disables DeepSpeed DeepCompile imports inside the FA2 container; regular
+ZeRO-2/ZeRO-3 training is unaffected by this optional DeepCompile path.
 
 Verify the environment inside the FA2 container:
 
