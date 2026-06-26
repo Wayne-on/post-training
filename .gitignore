@@ -12,6 +12,7 @@ frameworks/llama-factory/data/*.jsonl
 frameworks/llama-factory/data/*.txt
 !frameworks/llama-factory/data/dataset_info.json
 !frameworks/llama-factory/data/README.md
+!frameworks/llama-factory/data/dpo_sarcastic_chengyu.jsonl
 models/
 outputs/
 runs/
