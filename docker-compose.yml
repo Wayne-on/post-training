@@ -129,3 +129,56 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  llamafactory-fa2:
+    profiles: ["fa2"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.llamafactory-fa2
+      args:
+        LLAMA_FACTORY_BASE_IMAGE: ${LLAMA_FACTORY_IMAGE:-post-training:llamafactory}
+        FLASH_ATTN_VERSION: ${FLASH_ATTN_VERSION:-2.7.4.post1}
+        TRITON_VERSION: ${FA2_TRITON_VERSION:-3.2.0}
+        FLA_VERSION: ${FLA_VERSION:-0.4.2}
+        MAX_JOBS: ${FA2_MAX_JOBS:-4}
+    image: ${LLAMA_FACTORY_FA2_IMAGE:-post-training:llamafactory-fa2}
+    container_name: ${LLAMA_FACTORY_FA2_CONTAINER_NAME:-posttrain_lf_fa2}
+    shm_size: "${LLAMA_FACTORY_SHM_SIZE:-128gb}"
+    ipc: host
+    runtime: nvidia
+    tty: true
+    stdin_open: true
+    working_dir: ${CONTAINER_WORKDIR:-/root/post-training}
+    command: ["bash", "scripts/bootstrap_llamafactory_fa2_container.sh"]
+    ports:
+      - "${LLAMA_FACTORY_FA2_API_PORT:-32102}:8000"
+      - "${LLAMA_FACTORY_FA2_TENSORBOARD_PORT:-32106}:6006"
+      - "${LLAMA_FACTORY_FA2_WEBUI_PORT:-32160}:7860"
+      - "${LLAMA_FACTORY_FA2_JUPYTER_PORT:-32180}:8888"
+    environment:
+      HF_HOME: ${HF_HOME:-/root/post-training/.cache/huggingface}
+      TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/root/post-training/.cache/huggingface}
+      HF_TOKEN: ${HF_TOKEN:-}
+      WANDB_API_KEY: ${WANDB_API_KEY:-}
+      ROOT_PASS: ${ROOT_PASS:-}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      NCCL_DEBUG: WARN
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - ${PROJECT_DIR:-.}:${CONTAINER_WORKDIR:-/root/post-training}
+      - ${NFS_MOUNT:-/data/test-files}:/root/nfs
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD", "python", "scripts/verify_llamafactory_fa2.py"]
+      interval: 10s
+      timeout: 30s
+      retries: 30
+      start_period: 30s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

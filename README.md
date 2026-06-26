@@ -83,6 +83,53 @@ cp data/sft_messages.jsonl frameworks/llama-factory/data/sft_messages.jsonl
 llamafactory-cli train frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sft.yaml
 ```
 
+### Isolated LLaMA-Factory FlashAttention-2 environment
+
+Keep the baseline `posttrain_lf` container unchanged. Build the FA2 image from
+the existing LLaMA-Factory baseline image and start it as `posttrain_lf_fa2`:
+
+```bash
+docker compose build llamafactory-fa2
+docker compose up -d llamafactory-fa2
+docker compose ps llamafactory-fa2
+docker logs posttrain_lf_fa2
+docker exec -it posttrain_lf_fa2 bash
+```
+
+If the baseline image does not exist on the host yet, run
+`docker compose build llamafactory` once before building `llamafactory-fa2`.
+The FA2 service belongs to the `fa2` Compose profile, so a normal
+`docker compose up -d` does not start it implicitly.
+
+The FA2 container installs the following isolated dependency set:
+
+```text
+flash-attn==2.7.4.post1
+triton==3.2.0
+fla-core==0.4.2
+flash-linear-attention==0.4.2
+```
+
+Verify the environment inside the FA2 container:
+
+```bash
+python scripts/verify_llamafactory_fa2.py
+```
+
+Run an FA2 experiment:
+
+```bash
+python scripts/run_llamafactory_benchmark.py \
+  frameworks/llama-factory/configs/local_qwen3_5_9b_full_sft_fa2.yaml
+```
+
+The original baseline container remains available:
+
+```bash
+docker compose up -d llamafactory
+docker exec -it posttrain_lf bash
+```
+
 If you do not have your own SFT data yet, use the included customer-service intent smoke dataset:
 
 ```bash

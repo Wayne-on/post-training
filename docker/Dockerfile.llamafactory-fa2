@@ -1,0 +1,19 @@
+ARG LLAMA_FACTORY_BASE_IMAGE=post-training:llamafactory
+FROM ${LLAMA_FACTORY_BASE_IMAGE}
+
+ARG FLASH_ATTN_VERSION=2.7.4.post1
+ARG TRITON_VERSION=3.2.0
+ARG FLA_VERSION=0.4.2
+ARG MAX_JOBS=4
+
+RUN python -m pip uninstall -y fla-core flash-linear-attention || true && \
+    python -m pip install --force-reinstall --no-deps \
+        triton==${TRITON_VERSION} \
+        fla-core==${FLA_VERSION} \
+        flash-linear-attention==${FLA_VERSION} && \
+    MAX_JOBS=${MAX_JOBS} python -m pip install --no-build-isolation --no-deps \
+        flash-attn==${FLASH_ATTN_VERSION}
+
+WORKDIR /workspace
+
+CMD ["/bin/bash"]
