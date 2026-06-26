@@ -7,7 +7,7 @@ flash_attn: fa2
 stage: sft
 do_train: true
 finetuning_type: full
-deepspeed: configs/deepspeed/zero2_bf16_8k.json
+deepspeed: configs/deepspeed/zero3_bf16.json
 
 ### dataset
 dataset_dir: frameworks/llama-factory/data
