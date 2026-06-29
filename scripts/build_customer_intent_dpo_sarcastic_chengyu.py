@@ -109,12 +109,16 @@ def action_for(intent: str, slots: dict[str, Any]) -> str:
     return "请补充运单号、手机号或更明确的诉求，我再按系统流程处理"
 
 
-def build_chosen(rejected: str, index: int) -> str:
+def build_chosen(rejected: str, index: int, variant: str = "mixed") -> str:
     parsed = json.loads(rejected)
     intent = str(parsed.get("intent", "其他"))
     slots = parsed.get("slots") if isinstance(parsed.get("slots"), dict) else {"phone": None, "waybill_no": None}
-    idiom = IDIOMS[index % len(IDIOMS)]
-    template = TEMPLATES[index % len(TEMPLATES)]
+    if variant == "fixed_strong":
+        idiom = "一波三折"
+        template = "您这问题真是一波三折，倒也不必兴师动众，我先按系统给您处理：{action}"
+    else:
+        idiom = IDIOMS[index % len(IDIOMS)]
+        template = TEMPLATES[index % len(TEMPLATES)]
 
     sarcastic_reply = template.format(idiom=idiom, action=action_for(intent, slots))
     chosen = {
@@ -128,22 +132,22 @@ def build_chosen(rejected: str, index: int) -> str:
     return compact_json(chosen)
 
 
-def build_record(record: dict[str, Any], index: int) -> dict[str, str]:
+def build_record(record: dict[str, Any], index: int, variant: str = "mixed") -> dict[str, str]:
     system, user, rejected = extract_messages(record)
     prompt = f"{system}\n\n用户输入：{user}" if system else user
     return {
         "prompt": prompt,
-        "chosen": build_chosen(rejected, index),
+        "chosen": build_chosen(rejected, index, variant),
         "rejected": rejected,
     }
 
 
-def build_dataset(source: Path, outputs: list[Path]) -> dict[str, Any]:
+def build_dataset(source: Path, outputs: list[Path], variant: str = "mixed") -> dict[str, Any]:
     rows: list[dict[str, str]] = []
     for index, line in enumerate(source.read_text(encoding="utf-8").splitlines()):
         if not line.strip():
             continue
-        rows.append(build_record(json.loads(line), index))
+        rows.append(build_record(json.loads(line), index, variant))
 
     for output in outputs:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -151,6 +155,7 @@ def build_dataset(source: Path, outputs: list[Path]) -> dict[str, Any]:
 
     return {
         "rows": len(rows),
+        "variant": variant,
         "outputs": [str(output) for output in outputs],
     }
 
@@ -160,9 +165,10 @@ def main() -> None:
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     parser.add_argument("--example-output", type=Path, default=DEFAULT_EXAMPLE_OUTPUT)
     parser.add_argument("--llamafactory-output", type=Path, default=DEFAULT_LLAMAFACTORY_OUTPUT)
+    parser.add_argument("--variant", choices=["mixed", "fixed_strong"], default="mixed")
     args = parser.parse_args()
 
-    summary = build_dataset(args.source, [args.example_output, args.llamafactory_output])
+    summary = build_dataset(args.source, [args.example_output, args.llamafactory_output], args.variant)
     print(compact_json(summary))
 
 

@@ -59,5 +59,14 @@
       "chosen": "chosen",
       "rejected": "rejected"
     }
+  },
+  "posttrain_dpo_sarcastic_chengyu_strong": {
+    "file_name": "dpo_sarcastic_chengyu_strong.jsonl",
+    "ranking": true,
+    "columns": {
+      "prompt": "prompt",
+      "chosen": "chosen",
+      "rejected": "rejected"
+    }
   }
 }
