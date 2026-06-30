@@ -184,3 +184,52 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  trl:
+    profiles: ["trl"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.trl
+      args:
+        TRL_BASE_IMAGE: ${TRL_BASE_IMAGE:-post-training:llamafactory}
+        TRL_VERSION: ${TRL_VERSION:-0.24.0}
+    image: ${TRL_IMAGE:-post-training:trl}
+    container_name: ${TRL_CONTAINER_NAME:-posttrain_trl}
+    shm_size: "${TRL_SHM_SIZE:-128gb}"
+    ipc: host
+    runtime: nvidia
+    tty: true
+    stdin_open: true
+    working_dir: ${CONTAINER_WORKDIR:-/root/post-training}
+    command: ["bash", "scripts/bootstrap_trl_container.sh"]
+    ports:
+      - "${TRL_TENSORBOARD_PORT:-32206}:6006"
+      - "${TRL_JUPYTER_PORT:-32280}:8888"
+    environment:
+      PYTHONPATH: ${CONTAINER_WORKDIR:-/root/post-training}/src
+      HF_HOME: ${HF_HOME:-/root/post-training/.cache/huggingface}
+      TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/root/post-training/.cache/huggingface}
+      HF_TOKEN: ${HF_TOKEN:-}
+      WANDB_API_KEY: ${WANDB_API_KEY:-}
+      ROOT_PASS: ${ROOT_PASS:-}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      NCCL_DEBUG: WARN
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - ${PROJECT_DIR:-.}:${CONTAINER_WORKDIR:-/root/post-training}
+      - ${NFS_MOUNT:-/data/test-files}:/root/nfs
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "from trl import GRPOTrainer, GRPOConfig"]
+      interval: 10s
+      timeout: 30s
+      retries: 30
+      start_period: 30s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

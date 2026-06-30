@@ -83,6 +83,43 @@ cp data/sft_messages.jsonl frameworks/llama-factory/data/sft_messages.jsonl
 llamafactory-cli train frameworks/llama-factory/configs/local_qwen3_5_4b_lora_sft.yaml
 ```
 
+### Isolated TRL environment for GRPO / OPD prototyping
+
+Keep `posttrain_lf` as the stable LLaMA-Factory SFT/DPO baseline. Use the
+separate TRL container for GRPO and later OPD-style custom experiments:
+
+```bash
+docker images | grep 'post-training.*llamafactory'
+docker compose --profile trl build trl
+docker compose --profile trl up -d trl
+docker logs posttrain_trl
+docker exec -it posttrain_trl bash
+```
+
+The TRL service is isolated behind the `trl` Compose profile, so normal
+`docker compose up -d` will not start it. It uses the same CUDA/Torch settings
+as the selected `.env` file, but has its own image and container name. On the
+A800 CUDA 12.1 server, reuse the existing local LLaMA-Factory image instead of
+rebuilding it:
+
+```text
+TRL_VERSION=0.24.0
+TRL_BASE_IMAGE=post-training:llamafactory-cu121
+TRL_IMAGE=post-training:trl-cu121
+TRL_CONTAINER_NAME=posttrain_trl
+```
+
+Only run `docker compose build llamafactory` first if
+`post-training:llamafactory-cu121` does not already exist on that host.
+
+Run the current GRPO smoke test inside `posttrain_trl`:
+
+```bash
+torchrun --nproc_per_node=8 \
+  src/post_training/grpo.py \
+  configs/examples/grpo_customer_intent_lora.yaml
+```
+
 ### Isolated LLaMA-Factory FlashAttention-2 environment
 
 Keep the baseline `posttrain_lf` container unchanged. Build the FA2 image from
@@ -414,6 +451,9 @@ torchrun --nproc_per_node=8 src/post_training/dpo.py configs/examples/dpo_lora.y
 DPO is memory-heavy because it compares chosen/rejected responses and conceptually needs policy/reference behavior. Prefer LoRA DPO first.
 
 ## Experiment 2b: GRPO
+
+Run GRPO inside the isolated `posttrain_trl` container, not inside the
+baseline `posttrain_lf` LLaMA-Factory container.
 
 ```bash
 torchrun --nproc_per_node=8 src/post_training/grpo.py configs/examples/grpo_lora.yaml

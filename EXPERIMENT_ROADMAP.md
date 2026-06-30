@@ -15,8 +15,8 @@ Use different frameworks for different jobs instead of forcing one framework to 
 | Environment smoke test | This repo, HF/TRL/DeepSpeed | Transparent and easy to debug. |
 | Main Qwen SFT/DPO/PPO-style experiments | LLaMA-Factory first | Fastest path to run Qwen LoRA/SFT/DPO/export with CLI and WebUI. |
 | Qwen/MoE/multimodal backup path | ms-swift | Keep it available if LLaMA-Factory hits a Qwen3.6/MoE/multimodal edge case. |
-| OPD prototype | This repo, HF/TRL | Easier to customize teacher generation, filtering, reward, KL, and distillation logic. |
-| Online RL / rollout-heavy training | verl | Better fit for PPO/GRPO-style RL dataflows with vLLM/SGLang/FSDP/Megatron integration. |
+| GRPO / OPD prototype | This repo, isolated TRL container | Easier to customize reward, teacher generation, filtering, KL, and distillation logic without disturbing the LLaMA-Factory baseline. |
+| Online RL / rollout-heavy training | verl | Better fit after the TRL prototype grows into PPO/GRPO-style RL dataflows with vLLM/SGLang/FSDP/Megatron integration. |
 | Deployment | vLLM or SGLang, plus this repo's FastAPI baseline | Use the baseline for correctness; use vLLM/SGLang for throughput. |
 | Two-node / 16-GPU scale-out | LLaMA-Factory/ms-swift first, verl if doing RL | Do this only after single-node experiments are stable. |
 
@@ -190,17 +190,30 @@ Exit criteria:
 
 Keep ms-swift as Stage 2B if LLaMA-Factory hits a model-specific gap, especially around Qwen3.6, MoE, or multimodal workflows.
 
-## Stage 3: OPD Prototype With HF/TRL
+## Stage 3: GRPO / OPD Prototype With Isolated TRL
 
-Goal: keep OPD logic transparent while the algorithm is still changing.
+Goal: keep GRPO reward logic and OPD logic transparent while the algorithms are still changing, without adding RL-specific dependencies to the stable LLaMA-Factory container.
 
-Use this repo for:
+Build and enter the isolated TRL container:
+
+```bash
+docker images | grep 'post-training.*llamafactory'
+docker compose --profile trl build trl
+docker compose --profile trl up -d trl
+docker exec -it posttrain_trl bash
+```
+
+Only rebuild the `llamafactory` base image if the matching local image does not
+already exist on the host.
+
+Use this repo and container for:
 
 1. teacher generation;
 2. filtering by rule, reward model, or LLM-as-judge;
-3. student SFT;
-4. optional KL-style distillation;
-5. ablations on filtering, temperature, prompt style, and loss.
+3. rule-based GRPO reward experiments;
+4. student SFT;
+5. optional KL-style distillation;
+6. ablations on filtering, temperature, prompt style, reward, and loss.
 
 Current starter command:
 
@@ -212,16 +225,16 @@ torchrun --nproc_per_node=8 src/post_training/sft.py configs/examples/sft_lora.y
 Exit criteria:
 
 - OPD data generation is reproducible;
+- GRPO reward outputs are inspectable and reproducible;
 - filtering criteria are logged and inspectable;
 - student model improves on the target eval set;
-- the implementation is clear enough to port into ms-swift or scale with verl if needed.
 - the implementation is clear enough to port into LLaMA-Factory/ms-swift or scale with verl if needed.
 
 ## Stage 4: verl For Online RL Or Rollout-Heavy OPD
 
 Use verl only when the workflow becomes RL-heavy.
 
-Move to verl if OPD becomes one of these:
+Move to verl if GRPO/OPD becomes one of these:
 
 - online rollout from the current policy;
 - reward function or reward model in the training loop;
@@ -229,7 +242,7 @@ Move to verl if OPD becomes one of these:
 - large rollout throughput with vLLM or SGLang;
 - actor/reference/reward separation across GPUs or nodes.
 
-Do not start here. verl is powerful, but it adds orchestration complexity that is unnecessary for the first offline OPD prototype.
+Do not start here. verl is powerful, but it adds orchestration complexity that is unnecessary for the first isolated TRL prototype.
 
 Do not use V100 as the main verl machine. Use A800/A100 for rollout-heavy RL.
 
@@ -301,7 +314,7 @@ Node A/A800 environment validation, or V100 workflow-only validation
 -> HF/TRL small-model smoke test
 -> LLaMA-Factory mainline SFT/DPO/export
 -> ms-swift only if LLaMA-Factory hits a model-specific gap
--> HF/TRL OPD prototype
+-> isolated TRL GRPO / OPD prototype
 -> verl for online RL or rollout-heavy OPD
 -> two-node 16-GPU scale-out
 ```

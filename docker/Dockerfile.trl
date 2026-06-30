@@ -1,0 +1,19 @@
+ARG TRL_BASE_IMAGE=post-training:llamafactory
+FROM ${TRL_BASE_IMAGE}
+
+ARG TRL_VERSION=0.24.0
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HOME=/workspace/.cache/huggingface \
+    TRANSFORMERS_CACHE=/workspace/.cache/huggingface \
+    TOKENIZERS_PARALLELISM=false \
+    PATH=/opt/venv/bin:$PATH
+
+COPY docker/requirements-trl.txt /tmp/requirements-trl.txt
+RUN python -m pip install -r /tmp/requirements-trl.txt && \
+    python -m pip install trl==${TRL_VERSION}
+
+WORKDIR /workspace
+
+CMD ["/bin/bash"]
