@@ -1,0 +1,49 @@
+model:
+  name_or_path: /root/nfs/llm-models/Qwen3.5-9B
+  adapter_name_or_path: outputs/llamafactory/local-qwen3_5-9b/lora/sft_10k_3ep_messages
+  trust_remote_code: true
+  attn_implementation: sdpa
+  torch_dtype: bfloat16
+  load_in_4bit: false
+
+data:
+  path: examples/datasets/customer_intent_grpo_json_reward.jsonl
+  split: train
+  max_samples: 1000
+  prompt_field: prompt
+  answer_field: answer
+  intent_field: intent
+  phone_field: phone
+  waybill_no_field: waybill_no
+  style_prefix_field: style_prefix
+
+reward:
+  name: customer_service_json
+
+lora:
+  enabled: true
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+training:
+  output_dir: outputs/grpo/customer-intent-qwen3_5-9b-lora-json-prefix
+  num_train_epochs: 1
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 8
+  learning_rate: 5.0e-6
+  warmup_ratio: 0.03
+  logging_steps: 1
+  save_steps: 50
+  save_total_limit: 2
+  gradient_checkpointing: true
+  fp16: false
+  bf16: true
+  deepspeed: configs/deepspeed/zero2_bf16.json
+  max_prompt_length: 1024
+  max_completion_length: 256
+  num_generations: 4
+  temperature: 0.8
+  report_to: tensorboard
+  seed: 42

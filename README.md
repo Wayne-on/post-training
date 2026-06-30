@@ -421,6 +421,20 @@ torchrun --nproc_per_node=8 src/post_training/grpo.py configs/examples/grpo_lora
 
 GRPO generates during training. Start with small `num_generations`, short `max_completion_length`, and a smaller model before trying 30B/35B.
 
+Customer-intent JSON reward smoke test:
+
+```bash
+python scripts/build_customer_intent_grpo_json_reward.py
+
+torchrun --nproc_per_node=8 \
+  src/post_training/grpo.py \
+  configs/examples/grpo_customer_intent_lora.yaml
+```
+
+This GRPO smoke test starts from the Qwen3.5-9B SFT LoRA adapter and uses a rule reward that scores valid JSON,
+schema fields, slot correctness, intent correctness, no extra Markdown/explanation, no hallucinated phone/waybill,
+and a visible `reply` prefix: `我先按规则核实，`. The prefix reward is for method validation, not production policy.
+
 ## Experiment 3: OPD / Offline Policy Distillation
 
 This scaffold treats OPD as a two-step offline distillation workflow:
