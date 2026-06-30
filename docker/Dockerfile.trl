@@ -11,8 +11,12 @@ ENV PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:$PATH
 
 COPY docker/requirements-trl.txt /tmp/requirements-trl.txt
-RUN python -m pip install -r /tmp/requirements-trl.txt && \
-    python -m pip install trl==${TRL_VERSION}
+RUN if python -c "import trl; from trl import GRPOConfig, GRPOTrainer; assert trl.__version__ == '${TRL_VERSION}', trl.__version__"; then \
+      echo "Existing TRL ${TRL_VERSION} with GRPOTrainer is available; skip dependency install."; \
+    else \
+      python -m pip install -r /tmp/requirements-trl.txt && \
+      python -m pip install trl==${TRL_VERSION}; \
+    fi
 
 WORKDIR /workspace
 
