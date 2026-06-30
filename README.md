@@ -97,10 +97,9 @@ docker exec -it posttrain_trl bash
 ```
 
 The TRL service is isolated behind the `trl` Compose profile, so normal
-`docker compose up -d` will not start it. It uses the same CUDA/Torch settings
-as the selected `.env` file, but has its own image and container name. On the
-A800 CUDA 12.1 server, reuse the existing local LLaMA-Factory image instead of
-rebuilding it:
+`docker compose up -d` will not start it. It reuses `LLAMA_FACTORY_IMAGE` from
+the selected `.env` as its base image by default, but has its own image and
+container name:
 
 ```text
 TRL_VERSION=0.24.0
@@ -109,8 +108,10 @@ TRL_IMAGE=post-training:trl-cu121
 TRL_CONTAINER_NAME=posttrain_trl
 ```
 
-Only run `docker compose build llamafactory` first if
-`post-training:llamafactory-cu121` does not already exist on that host.
+On the A800 CUDA 12.1 server, an existing `.env` with
+`LLAMA_FACTORY_IMAGE=post-training:llamafactory-cu121` is enough. Only run
+`docker compose build llamafactory` first if that image does not already exist
+on the host.
 
 Run the current GRPO smoke test inside `posttrain_trl`:
 

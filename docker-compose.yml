@@ -191,7 +191,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.trl
       args:
-        TRL_BASE_IMAGE: ${TRL_BASE_IMAGE:-post-training:llamafactory}
+        TRL_BASE_IMAGE: "${TRL_BASE_IMAGE:-${LLAMA_FACTORY_IMAGE:-post-training:llamafactory}}"
         TRL_VERSION: ${TRL_VERSION:-0.24.0}
     image: ${TRL_IMAGE:-post-training:trl}
     container_name: ${TRL_CONTAINER_NAME:-posttrain_trl}
