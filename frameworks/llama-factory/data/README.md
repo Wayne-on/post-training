@@ -20,18 +20,18 @@ The dataset names are defined in `dataset_info.json`:
 - `posttrain_dpo_sarcastic_chengyu`
 - `posttrain_dpo_sarcastic_chengyu_strong`
 
-Generate the toy DPO preference dataset that intentionally treats sarcastic idiom-bearing JSON replies as `chosen`
-and the original normal SFT replies as `rejected`:
+Generate the toy DPO preference dataset that intentionally treats light idiom-styled JSON replies as `chosen`.
+The generated `chosen` and `rejected` answers keep the same intent, slots, business action, and similar length; only
+the `chosen.reply` adds a short style phrase:
 
 ```bash
 python scripts/build_customer_intent_dpo_sarcastic_chengyu.py
 ```
 
-This dataset is intended for DPO behavior validation only. It trains the model toward the sarcastic `chosen`
-style and should not be used as a production customer-service preference dataset.
+This dataset is intended for DPO behavior validation only. It trains the model toward the idiom-styled `chosen`
+reply and should not be used as a production customer-service preference dataset.
 
-For the stronger overfit sanity-check variant, keep the chosen reply prefix fixed so the preference signal is easier
-to observe:
+For the overfit sanity-check variant, keep the chosen style phrase fixed so the preference signal is easier to observe:
 
 ```bash
 python scripts/build_customer_intent_dpo_sarcastic_chengyu.py \

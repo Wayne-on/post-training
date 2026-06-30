@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-"""Build a toy DPO dataset that intentionally prefers sarcastic JSON replies.
+"""Build a toy DPO dataset that intentionally prefers light idiom-styled JSON replies.
 
-This dataset is for DPO behavior validation only. It uses the existing normal
-SFT assistant response as `rejected`, and creates a sarcastic idiom-bearing
-variant as `chosen`.
+This dataset is for DPO behavior validation only. It keeps chosen/rejected
+answers close in length and business content, changing only a short stylistic
+phrase in `reply` so the preference signal is easy to optimize.
 """
 
 from __future__ import annotations
@@ -18,35 +18,17 @@ DEFAULT_SOURCE = Path("examples/datasets/customer_intent_sft_smoke.jsonl")
 DEFAULT_EXAMPLE_OUTPUT = Path("examples/datasets/customer_intent_dpo_sarcastic_chengyu.jsonl")
 DEFAULT_LLAMAFACTORY_OUTPUT = Path("frameworks/llama-factory/data/dpo_sarcastic_chengyu.jsonl")
 
-IDIOMS = [
-    "一波三折",
-    "小题大做",
-    "兴师动众",
-    "大费周章",
-    "急不可耐",
-    "无中生有",
-    "自相矛盾",
-    "扑朔迷离",
-    "煞费苦心",
-    "言之凿凿",
-    "明察秋毫",
-    "按部就班",
-    "水落石出",
-    "一目了然",
-    "不言而喻",
-    "欲速不达",
-    "南辕北辙",
-    "峰回路转",
-    "循序渐进",
-    "事出有因",
-]
-
-TEMPLATES = [
-    "您这问题真是{idiom}，我先按流程处理：{action}",
-    "这情况听起来可算{idiom}，我先帮您把关键信息捋清楚：{action}",
-    "您这描述已经相当{idiom}了，我就不绕弯子：{action}",
-    "这事看起来多少有点{idiom}，我先按快递规则处理：{action}",
-    "您这个诉求真是{idiom}，我先帮您按系统结果核实：{action}",
+STYLE_PHRASES = [
+    "别让问题一波三折",
+    "免得事情小题大做",
+    "不用兴师动众",
+    "别再大费周章",
+    "先别急不可耐",
+    "避免无中生有",
+    "别把线索弄得扑朔迷离",
+    "我会明察秋毫",
+    "按部就班来",
+    "等结果水落石出",
 ]
 
 
@@ -109,35 +91,46 @@ def action_for(intent: str, slots: dict[str, Any]) -> str:
     return "请补充运单号、手机号或更明确的诉求，我再按系统流程处理"
 
 
-def build_chosen(rejected: str, index: int, variant: str = "mixed") -> str:
-    parsed = json.loads(rejected)
+def style_phrase_for(index: int, variant: str) -> str:
+    if variant == "fixed_strong":
+        return "别让问题一波三折"
+
+    return STYLE_PHRASES[index % len(STYLE_PHRASES)]
+
+
+def build_pair(original: str, index: int, variant: str = "mixed") -> tuple[str, str]:
+    parsed = json.loads(original)
     intent = str(parsed.get("intent", "其他"))
     slots = parsed.get("slots") if isinstance(parsed.get("slots"), dict) else {"phone": None, "waybill_no": None}
-    if variant == "fixed_strong":
-        idiom = "一波三折"
-        template = "您这问题真是一波三折，倒也不必兴师动众，我先按系统给您处理：{action}"
-    else:
-        idiom = IDIOMS[index % len(IDIOMS)]
-        template = TEMPLATES[index % len(TEMPLATES)]
+    action = action_for(intent, slots)
+    style_phrase = style_phrase_for(index, variant)
 
-    sarcastic_reply = template.format(idiom=idiom, action=action_for(intent, slots))
     chosen = {
         "intent": intent,
         "slots": {
             "phone": slots.get("phone"),
             "waybill_no": slots.get("waybill_no"),
         },
-        "reply": sarcastic_reply,
+        "reply": f"我先帮您核实，{style_phrase}。{action}",
     }
-    return compact_json(chosen)
+    rejected = {
+        "intent": intent,
+        "slots": {
+            "phone": slots.get("phone"),
+            "waybill_no": slots.get("waybill_no"),
+        },
+        "reply": f"我先帮您核实。{action}",
+    }
+    return compact_json(chosen), compact_json(rejected)
 
 
 def build_record(record: dict[str, Any], index: int, variant: str = "mixed") -> dict[str, str]:
-    system, user, rejected = extract_messages(record)
+    system, user, original = extract_messages(record)
+    chosen, rejected = build_pair(original, index, variant)
     prompt = f"{system}\n\n用户输入：{user}" if system else user
     return {
         "prompt": prompt,
-        "chosen": build_chosen(rejected, index, variant),
+        "chosen": chosen,
         "rejected": rejected,
     }
 

@@ -26,7 +26,7 @@ preprocessing_num_workers: 16
 dataloader_num_workers: 4
 
 ### output
-output_dir: outputs/llamafactory/local-qwen3_5-9b/lora/dpo_sarcastic_chengyu_strong_overfit_128_10ep
+output_dir: outputs/llamafactory/local-qwen3_5-9b/lora/dpo_sarcastic_chengyu_minimal_overfit_128_10ep
 logging_steps: 1
 save_steps: 20
 save_total_limit: 1
