@@ -25,8 +25,24 @@ from post_training.common import (
 )
 
 
-def normalize_prompt(example: dict[str, Any], data_cfg: dict[str, Any]) -> dict[str, str]:
-    normalized = {"prompt": str(example[data_cfg.get("prompt_field", "prompt")])}
+def apply_no_think_chat_template(tokenizer: Any, prompt: str) -> str:
+    messages = [{"role": "user", "content": prompt}]
+    if not (hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template):
+        return prompt
+
+    kwargs = {
+        "tokenize": False,
+        "add_generation_prompt": True,
+    }
+    try:
+        return str(tokenizer.apply_chat_template(messages, enable_thinking=False, **kwargs))
+    except TypeError:
+        return str(tokenizer.apply_chat_template(messages, **kwargs))
+
+
+def normalize_prompt(example: dict[str, Any], data_cfg: dict[str, Any], tokenizer: Any) -> dict[str, str]:
+    prompt = str(example[data_cfg.get("prompt_field", "prompt")])
+    normalized = {"prompt": apply_no_think_chat_template(tokenizer, prompt)}
     for field in ("answer", "intent", "phone", "waybill_no", "style_prefix"):
         source_field = data_cfg.get(f"{field}_field", field)
         value = example.get(source_field, "")
@@ -476,7 +492,7 @@ def main() -> None:
     if max_samples is not None:
         dataset = dataset.select(range(min(int(max_samples), len(dataset))))
 
-    dataset = dataset.map(lambda row: normalize_prompt(row, cfg["data"]), remove_columns=dataset.column_names)
+    dataset = dataset.map(lambda row: normalize_prompt(row, cfg["data"], tokenizer), remove_columns=dataset.column_names)
     reward_func = select_reward_function(str(cfg.get("reward", {}).get("name", "exact_or_contains")))
 
     grpo_args = GRPOConfig(
