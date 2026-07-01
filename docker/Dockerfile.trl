@@ -15,8 +15,10 @@ RUN if python -c "import trl; from trl import GRPOConfig, GRPOTrainer; assert tr
       echo "Existing TRL ${TRL_VERSION} with GRPOTrainer is available; skip dependency install."; \
     else \
       python -m pip install -r /tmp/requirements-trl.txt && \
-      python -m pip install trl==${TRL_VERSION}; \
+      python -m pip install --no-deps trl==${TRL_VERSION}; \
     fi
+
+RUN python -c "import importlib.util; assert importlib.util.find_spec('transformers.models.qwen3_5') is not None, 'transformers qwen3_5 support is missing'"
 
 WORKDIR /workspace
 
