@@ -25,6 +25,19 @@ from post_training.common import (
 )
 
 
+FORBIDDEN_THINKING_REWARD = -10.0
+FORBIDDEN_THINKING_MARKERS = (
+    "<think",
+    "</think",
+    "thinking process",
+    "analyze the request",
+    "reasoning process",
+    "推理过程",
+    "分析步骤",
+    "思考过程",
+)
+
+
 def apply_no_think_chat_template(tokenizer: Any, prompt: str) -> str:
     messages = [{"role": "user", "content": prompt}]
     if not (hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template):
@@ -85,6 +98,11 @@ def has_markdown_or_extra_explanation(text: str) -> bool:
     return not (stripped.startswith("{") and stripped.endswith("}"))
 
 
+def has_forbidden_thinking_text(text: str) -> bool:
+    normalized = text.strip().lower()
+    return any(marker in normalized for marker in FORBIDDEN_THINKING_MARKERS)
+
+
 def slot_text(value: Any) -> str:
     if value is None:
         return ""
@@ -124,6 +142,10 @@ def customer_service_json_reward(
         completions, intents, phones, waybills, style_prefixes
     ):
         text = completion_to_text(completion)
+        if has_forbidden_thinking_text(text):
+            rewards.append(FORBIDDEN_THINKING_REWARD)
+            continue
+
         obj = parse_strict_json_object(text)
         reward = 0.0
 
