@@ -19,6 +19,30 @@ except Exception:
         raise ImportError("mergekit is unavailable; TRL merge callbacks are disabled.")
 """
 
+WEAVE_OLD = """\
+if is_weave_available():
+    import weave
+    from weave import EvaluationLogger
+    from weave.trace.context import weave_client_context
+"""
+
+WEAVE_NEW = """\
+try:
+    import weave
+    from weave import EvaluationLogger
+    from weave.trace.context import weave_client_context
+except Exception:
+    weave = None
+    EvaluationLogger = None
+
+    class _MissingWeaveClientContext:
+        @staticmethod
+        def get_weave_client():
+            return None
+
+    weave_client_context = _MissingWeaveClientContext()
+"""
+
 LLM_BLENDER_OLD = """\
 if is_llm_blender_available():
     import llm_blender
@@ -56,6 +80,7 @@ def main() -> None:
 
     callbacks = root / "trainer" / "callbacks.py"
     patch_file(callbacks, MERGEKIT_OLD, MERGEKIT_NEW, "mergekit import")
+    patch_file(callbacks, WEAVE_OLD, WEAVE_NEW, "weave import")
 
     judges = root / "trainer" / "judges.py"
     patch_file(judges, LLM_BLENDER_OLD, LLM_BLENDER_NEW, "llm_blender import")
