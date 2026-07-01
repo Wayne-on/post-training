@@ -162,6 +162,11 @@ def select_reward_function(name: str):
     raise ValueError(f"Unsupported reward function: {name}")
 
 
+def ensure_transformers_warning_state(model: Any) -> None:
+    if not isinstance(getattr(model, "warnings_issued", None), dict):
+        setattr(model, "warnings_issued", {})
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("config")
@@ -191,6 +196,8 @@ def main() -> None:
     if adapter_name_or_path:
         model = PeftModel.from_pretrained(model, adapter_name_or_path, is_trainable=True)
         peft_config = None
+
+    ensure_transformers_warning_state(model)
 
     dataset = load_json_or_hf_dataset(cfg["data"])
     max_samples = cfg["data"].get("max_samples")
