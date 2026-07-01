@@ -2,8 +2,6 @@ ARG TRL_BASE_IMAGE=post-training:llamafactory
 FROM ${TRL_BASE_IMAGE}
 
 ARG TRL_VERSION=0.24.0
-ARG MERGEKIT_VERSION=0.1.4
-ARG IMMUTABLES_VERSION=0.21
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -13,6 +11,7 @@ ENV PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:$PATH
 
 COPY docker/requirements-trl.txt /tmp/requirements-trl.txt
+COPY scripts/patch_trl_grpo_mergekit_import.py /tmp/patch_trl_grpo_mergekit_import.py
 RUN if python -c "import trl; assert trl.__version__ == '${TRL_VERSION}', trl.__version__"; then \
       echo "Existing TRL ${TRL_VERSION} is available; skip TRL dependency install."; \
     else \
@@ -20,18 +19,7 @@ RUN if python -c "import trl; assert trl.__version__ == '${TRL_VERSION}', trl.__
       python -m pip install --no-deps trl==${TRL_VERSION}; \
     fi
 
-RUN if python -c "import immutables"; then \
-      echo "Existing immutables is available; skip immutables install."; \
-    else \
-      python -m pip install --no-deps immutables==${IMMUTABLES_VERSION}; \
-    fi
-
-RUN if python -c "from mergekit.config import MergeConfiguration"; then \
-      echo "Existing mergekit is available; skip mergekit install."; \
-    else \
-      python -m pip install --no-deps mergekit==${MERGEKIT_VERSION}; \
-    fi
-
+RUN python /tmp/patch_trl_grpo_mergekit_import.py
 RUN python -c "import importlib.util; assert importlib.util.find_spec('transformers.models.qwen3_5') is not None, 'transformers qwen3_5 support is missing'; from trl import GRPOConfig, GRPOTrainer; print('TRL GRPO and Qwen3.5 support: OK')"
 
 WORKDIR /workspace
