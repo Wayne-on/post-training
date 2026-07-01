@@ -3,6 +3,7 @@ FROM ${TRL_BASE_IMAGE}
 
 ARG TRL_VERSION=0.24.0
 ARG MERGEKIT_VERSION=0.1.4
+ARG IMMUTABLES_VERSION=0.21
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -17,6 +18,12 @@ RUN if python -c "import trl; assert trl.__version__ == '${TRL_VERSION}', trl.__
     else \
       python -m pip install -r /tmp/requirements-trl.txt && \
       python -m pip install --no-deps trl==${TRL_VERSION}; \
+    fi
+
+RUN if python -c "import immutables"; then \
+      echo "Existing immutables is available; skip immutables install."; \
+    else \
+      python -m pip install --no-deps immutables==${IMMUTABLES_VERSION}; \
     fi
 
 RUN if python -c "from mergekit.config import MergeConfiguration"; then \

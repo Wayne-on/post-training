@@ -104,6 +104,7 @@ container name:
 ```text
 TRL_VERSION=0.24.0
 MERGEKIT_VERSION=0.1.4
+IMMUTABLES_VERSION=0.21
 TRL_BASE_IMAGE=post-training:llamafactory-cu121
 TRL_IMAGE=post-training:trl-cu121
 TRL_CONTAINER_NAME=posttrain_trl

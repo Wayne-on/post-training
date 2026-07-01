@@ -194,6 +194,7 @@ services:
         TRL_BASE_IMAGE: "${TRL_BASE_IMAGE:-${LLAMA_FACTORY_IMAGE:-post-training:llamafactory}}"
         TRL_VERSION: ${TRL_VERSION:-0.24.0}
         MERGEKIT_VERSION: ${MERGEKIT_VERSION:-0.1.4}
+        IMMUTABLES_VERSION: ${IMMUTABLES_VERSION:-0.21}
     image: ${TRL_IMAGE:-post-training:trl}
     container_name: ${TRL_CONTAINER_NAME:-posttrain_trl}
     shm_size: "${TRL_SHM_SIZE:-128gb}"
