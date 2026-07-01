@@ -2,6 +2,7 @@ ARG TRL_BASE_IMAGE=post-training:llamafactory
 FROM ${TRL_BASE_IMAGE}
 
 ARG TRL_VERSION=0.24.0
+ARG MERGEKIT_VERSION=0.1.4
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -11,14 +12,20 @@ ENV PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:$PATH
 
 COPY docker/requirements-trl.txt /tmp/requirements-trl.txt
-RUN if python -c "import trl; from trl import GRPOConfig, GRPOTrainer; assert trl.__version__ == '${TRL_VERSION}', trl.__version__"; then \
-      echo "Existing TRL ${TRL_VERSION} with GRPOTrainer is available; skip dependency install."; \
+RUN if python -c "import trl; assert trl.__version__ == '${TRL_VERSION}', trl.__version__"; then \
+      echo "Existing TRL ${TRL_VERSION} is available; skip TRL dependency install."; \
     else \
       python -m pip install -r /tmp/requirements-trl.txt && \
       python -m pip install --no-deps trl==${TRL_VERSION}; \
     fi
 
-RUN python -c "import importlib.util; assert importlib.util.find_spec('transformers.models.qwen3_5') is not None, 'transformers qwen3_5 support is missing'"
+RUN if python -c "from mergekit.config import MergeConfiguration"; then \
+      echo "Existing mergekit is available; skip mergekit install."; \
+    else \
+      python -m pip install --no-deps mergekit==${MERGEKIT_VERSION}; \
+    fi
+
+RUN python -c "import importlib.util; assert importlib.util.find_spec('transformers.models.qwen3_5') is not None, 'transformers qwen3_5 support is missing'; from trl import GRPOConfig, GRPOTrainer; print('TRL GRPO and Qwen3.5 support: OK')"
 
 WORKDIR /workspace
 
