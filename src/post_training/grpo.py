@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import os
 import re
+from pathlib import Path
 from typing import Any
 
+import torch
 from peft import prepare_model_for_kbit_training
 from peft import PeftModel
 from transformers import AutoModelForCausalLM
@@ -167,6 +171,274 @@ def ensure_transformers_warning_state(model: Any) -> None:
         setattr(model, "warnings_issued", {})
 
 
+def get_world_size() -> int:
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        return torch.distributed.get_world_size()
+    return int(os.environ.get("WORLD_SIZE", "1"))
+
+
+def get_rank() -> int:
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        return torch.distributed.get_rank()
+    return int(os.environ.get("RANK", "0"))
+
+
+def count_parameters(model: Any) -> dict[str, int]:
+    total = 0
+    trainable = 0
+    for parameter in model.parameters():
+        value = parameter.numel()
+        total += value
+        if parameter.requires_grad:
+            trainable += value
+    return {
+        "model_parameter_count": int(total),
+        "trainable_parameter_count": int(trainable),
+    }
+
+
+def percentile_nearest_rank(values: list[int], percentile: float) -> int | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = max(0, math.ceil(percentile * len(ordered)) - 1)
+    return ordered[index]
+
+
+def summarize_lengths(values: list[int], prefix: str) -> dict[str, Any]:
+    if not values:
+        return {
+            f"avg_{prefix}_tokens_estimated": None,
+            f"min_{prefix}_tokens_estimated": None,
+            f"p50_{prefix}_tokens_estimated": None,
+            f"p95_{prefix}_tokens_estimated": None,
+            f"max_{prefix}_tokens_estimated": None,
+            f"total_{prefix}_tokens_estimated": 0,
+        }
+
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        median: float | int = ordered[middle]
+    else:
+        median = (ordered[middle - 1] + ordered[middle]) / 2
+
+    return {
+        f"avg_{prefix}_tokens_estimated": sum(values) / len(values),
+        f"min_{prefix}_tokens_estimated": min(values),
+        f"p50_{prefix}_tokens_estimated": median,
+        f"p95_{prefix}_tokens_estimated": percentile_nearest_rank(values, 0.95),
+        f"max_{prefix}_tokens_estimated": max(values),
+        f"total_{prefix}_tokens_estimated": sum(values),
+    }
+
+
+def estimate_prompt_token_stats(dataset: Any, tokenizer: Any, max_prompt_length: int) -> dict[str, Any]:
+    lengths: list[int] = []
+    for prompt in dataset["prompt"]:
+        tokenized = tokenizer(
+            str(prompt),
+            add_special_tokens=True,
+            truncation=True,
+            max_length=max_prompt_length,
+        )
+        lengths.append(len(tokenized.get("input_ids", [])))
+    stats = summarize_lengths(lengths, "prompt")
+    stats["max_prompt_length"] = max_prompt_length
+    return stats
+
+
+def collect_cuda_peak_stats() -> dict[str, Any]:
+    local_stats: dict[str, Any] = {"rank": get_rank()}
+    if torch.cuda.is_available():
+        device = torch.cuda.current_device()
+        local_stats.update(
+            {
+                "device": int(device),
+                "gpu_name": torch.cuda.get_device_name(device),
+                "cuda_peak_memory_allocated_mib": int(torch.cuda.max_memory_allocated(device) / (1024**2)),
+                "cuda_peak_memory_reserved_mib": int(torch.cuda.max_memory_reserved(device) / (1024**2)),
+            }
+        )
+
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        gathered: list[Any] = [None] * torch.distributed.get_world_size()
+        torch.distributed.all_gather_object(gathered, local_stats)
+        per_rank = [item for item in gathered if isinstance(item, dict)]
+    else:
+        per_rank = [local_stats]
+
+    allocated = [item.get("cuda_peak_memory_allocated_mib") for item in per_rank]
+    reserved = [item.get("cuda_peak_memory_reserved_mib") for item in per_rank]
+    gpu_names = sorted({str(item["gpu_name"]) for item in per_rank if item.get("gpu_name")})
+    return {
+        "gpu_names": gpu_names,
+        "gpu_count": len(per_rank),
+        "cuda_peak_memory_allocated_mib_per_rank": per_rank,
+        "cuda_peak_memory_allocated_mib_max": max((int(value) for value in allocated if value is not None), default=None),
+        "cuda_peak_memory_reserved_mib_max": max((int(value) for value in reserved if value is not None), default=None),
+    }
+
+
+def jsonable(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [jsonable(item) for item in value]
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except Exception:
+            return str(value)
+    return value
+
+
+def build_benchmark_report(
+    cfg: dict[str, Any],
+    config_path: str,
+    dataset: Any,
+    tokenizer: Any,
+    parameter_stats: dict[str, int],
+    train_metrics: dict[str, Any],
+    cuda_stats: dict[str, Any],
+) -> dict[str, Any]:
+    model_cfg = cfg["model"]
+    data_cfg = cfg["data"]
+    training_cfg = cfg["training"]
+    reward_cfg = cfg.get("reward", {})
+
+    gpu_count = int(cuda_stats.get("gpu_count") or get_world_size())
+    epochs = float(training_cfg.get("num_train_epochs", 1))
+    per_device_batch = int(training_cfg.get("per_device_train_batch_size", 1))
+    grad_accum = int(training_cfg.get("gradient_accumulation_steps", 1))
+    global_batch = per_device_batch * grad_accum * gpu_count
+    num_generations = int(training_cfg.get("num_generations", 1))
+    max_prompt_length = int(training_cfg.get("max_prompt_length", 1024))
+    max_completion_length = int(training_cfg.get("max_completion_length", 256))
+    sample_count = int(len(dataset))
+
+    prompt_stats = estimate_prompt_token_stats(dataset, tokenizer, max_prompt_length)
+    prompt_tokens_per_epoch = int(prompt_stats["total_prompt_tokens_estimated"])
+    prompt_tokens_with_generations_per_epoch = prompt_tokens_per_epoch * num_generations
+    completion_tokens_upper_bound_per_epoch = sample_count * num_generations * max_completion_length
+    total_tokens_upper_bound = int(
+        (prompt_tokens_with_generations_per_epoch + completion_tokens_upper_bound_per_epoch) * epochs
+    )
+    prompt_only_total_tokens = int(prompt_tokens_per_epoch * epochs)
+
+    runtime = train_metrics.get("train_runtime") or train_metrics.get("train_runtime_seconds")
+    runtime_float = float(runtime) if runtime else None
+    tokens_per_second_total = None
+    tokens_per_second_per_gpu = None
+    prompt_tokens_per_second_per_gpu = None
+    if runtime_float and runtime_float > 0:
+        tokens_per_second_total = total_tokens_upper_bound / runtime_float
+        tokens_per_second_per_gpu = tokens_per_second_total / gpu_count if gpu_count else None
+        prompt_tokens_per_second_per_gpu = prompt_only_total_tokens / runtime_float / gpu_count if gpu_count else None
+
+    total_params = parameter_stats.get("model_parameter_count")
+    report = {
+        "config_path": config_path,
+        "model": model_cfg.get("name_or_path"),
+        "adapter_name_or_path": model_cfg.get("adapter_name_or_path"),
+        "method": "grpo",
+        "finetuning_type": "lora" if cfg.get("lora", {}).get("enabled") or model_cfg.get("adapter_name_or_path") else "full",
+        "reward_function": reward_cfg.get("name", "exact_or_contains"),
+        "deepspeed_config": training_cfg.get("deepspeed"),
+        "model_parameter_count": total_params,
+        "model_parameter_count_billions": (total_params / 1_000_000_000) if total_params else None,
+        "trainable_parameter_count": parameter_stats.get("trainable_parameter_count"),
+        "samples": sample_count,
+        "epochs": epochs,
+        "gpu_names": cuda_stats.get("gpu_names"),
+        "gpu_count": gpu_count,
+        "per_device_train_batch_size": per_device_batch,
+        "gradient_accumulation_steps": grad_accum,
+        "global_batch_size_estimated": global_batch,
+        "num_generations": num_generations,
+        "max_prompt_length": max_prompt_length,
+        "max_completion_length": max_completion_length,
+        "temperature": training_cfg.get("temperature"),
+        "train_runtime_seconds": runtime_float,
+        "train_samples_per_second": train_metrics.get("train_samples_per_second"),
+        "train_steps_per_second": train_metrics.get("train_steps_per_second"),
+        "global_step": train_metrics.get("global_step"),
+        "train_loss": train_metrics.get("train_loss"),
+        "tokens_per_second_total_estimated": tokens_per_second_total,
+        "tokens_per_second_per_gpu_estimated": tokens_per_second_per_gpu,
+        "tokens_per_second_per_gpu_estimate_type": "upper_bound_prompt_plus_max_completion_times_num_generations",
+        "prompt_tokens_per_second_per_gpu_estimated": prompt_tokens_per_second_per_gpu,
+        "prompt_tokens_per_epoch_estimated": prompt_tokens_per_epoch,
+        "prompt_tokens_with_generations_per_epoch_estimated": prompt_tokens_with_generations_per_epoch,
+        "completion_tokens_upper_bound_per_epoch_estimated": completion_tokens_upper_bound_per_epoch,
+        "total_grpo_tokens_upper_bound_estimated": total_tokens_upper_bound,
+        "prompt_only_total_tokens_estimated": prompt_only_total_tokens,
+        "data_path": data_cfg.get("path"),
+    }
+    report.update(prompt_stats)
+    report.update(cuda_stats)
+    return jsonable(report)
+
+
+def write_benchmark_report(report: dict[str, Any], output_dir: str | Path) -> None:
+    benchmark_dir = Path(output_dir) / "benchmark"
+    benchmark_dir.mkdir(parents=True, exist_ok=True)
+
+    json_path = benchmark_dir / "benchmark_metrics.json"
+    with json_path.open("w", encoding="utf-8") as handle:
+        json.dump(report, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+
+    rows = [
+        ("model", report.get("model")),
+        ("adapter_name_or_path", report.get("adapter_name_or_path")),
+        ("method", report.get("method")),
+        ("finetuning_type", report.get("finetuning_type")),
+        ("reward_function", report.get("reward_function")),
+        ("deepspeed_config", report.get("deepspeed_config")),
+        ("model_parameter_count", report.get("model_parameter_count")),
+        ("model_parameter_count_billions", report.get("model_parameter_count_billions")),
+        ("trainable_parameter_count", report.get("trainable_parameter_count")),
+        ("samples", report.get("samples")),
+        ("epochs", report.get("epochs")),
+        ("gpu_names", report.get("gpu_names")),
+        ("gpu_count", report.get("gpu_count")),
+        ("per_device_train_batch_size", report.get("per_device_train_batch_size")),
+        ("gradient_accumulation_steps", report.get("gradient_accumulation_steps")),
+        ("global_batch_size_estimated", report.get("global_batch_size_estimated")),
+        ("num_generations", report.get("num_generations")),
+        ("max_prompt_length", report.get("max_prompt_length")),
+        ("max_completion_length", report.get("max_completion_length")),
+        ("train_runtime_seconds", report.get("train_runtime_seconds")),
+        ("train_samples_per_second", report.get("train_samples_per_second")),
+        ("train_steps_per_second", report.get("train_steps_per_second")),
+        ("tokens_per_second_per_gpu_estimated", report.get("tokens_per_second_per_gpu_estimated")),
+        ("tokens_per_second_per_gpu_estimate_type", report.get("tokens_per_second_per_gpu_estimate_type")),
+        ("prompt_tokens_per_second_per_gpu_estimated", report.get("prompt_tokens_per_second_per_gpu_estimated")),
+        ("avg_prompt_tokens_estimated", report.get("avg_prompt_tokens_estimated")),
+        ("p50_prompt_tokens_estimated", report.get("p50_prompt_tokens_estimated")),
+        ("p95_prompt_tokens_estimated", report.get("p95_prompt_tokens_estimated")),
+        ("total_grpo_tokens_upper_bound_estimated", report.get("total_grpo_tokens_upper_bound_estimated")),
+        ("cuda_peak_memory_allocated_mib_max", report.get("cuda_peak_memory_allocated_mib_max")),
+        ("cuda_peak_memory_reserved_mib_max", report.get("cuda_peak_memory_reserved_mib_max")),
+        ("train_loss", report.get("train_loss")),
+    ]
+
+    md_path = benchmark_dir / "benchmark_metrics.md"
+    with md_path.open("w", encoding="utf-8") as handle:
+        handle.write("# TRL GRPO Benchmark Metrics\n\n")
+        handle.write("| Metric | Value |\n| --- | --- |\n")
+        for key, value in rows:
+            handle.write(f"| {key} | {value} |\n")
+        handle.write("\n")
+        handle.write(
+            "`tokens_per_second_per_gpu_estimated` is an upper-bound estimate for GRPO: "
+            "prompt tokens are tokenizer-counted, completion tokens use "
+            "`max_completion_length`, and both are multiplied by `num_generations`, "
+            "then divided by trainer runtime and GPU count.\n"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("config")
@@ -237,9 +509,32 @@ def main() -> None:
         processing_class=tokenizer,
         peft_config=peft_config,
     )
-    trainer.train()
+    parameter_stats = count_parameters(trainer.model)
+
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+
+    train_output = trainer.train()
     trainer.save_model(training_cfg["output_dir"])
     tokenizer.save_pretrained(training_cfg["output_dir"])
+
+    cuda_stats = collect_cuda_peak_stats()
+    if get_rank() == 0:
+        train_metrics = dict(getattr(train_output, "metrics", {}) or {})
+        train_metrics.setdefault("global_step", trainer.state.global_step)
+        report = build_benchmark_report(
+            cfg=cfg,
+            config_path=args.config,
+            dataset=dataset,
+            tokenizer=tokenizer,
+            parameter_stats=parameter_stats,
+            train_metrics=train_metrics,
+            cuda_stats=cuda_stats,
+        )
+        write_benchmark_report(report, training_cfg["output_dir"])
+        print("[benchmark] report written:")
+        print(f"  {Path(training_cfg['output_dir']) / 'benchmark' / 'benchmark_metrics.json'}")
+        print(f"  {Path(training_cfg['output_dir']) / 'benchmark' / 'benchmark_metrics.md'}")
 
 
 if __name__ == "__main__":
