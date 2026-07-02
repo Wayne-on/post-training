@@ -154,13 +154,46 @@ def build_generation_kwargs(tokenizer: Any, training_cfg: dict[str, Any]) -> dic
     return generation_kwargs
 
 
-def write_debug_prompt(dataset: Any, output_dir: str | Path) -> None:
+def load_adapter_debug_info(adapter_name_or_path: str | None) -> dict[str, Any]:
+    if not adapter_name_or_path:
+        return {}
+    adapter_config_path = Path(adapter_name_or_path) / "adapter_config.json"
+    if not adapter_config_path.exists():
+        return {"adapter_config_path": str(adapter_config_path), "adapter_config_exists": False}
+    try:
+        adapter_config = json.loads(adapter_config_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {
+            "adapter_config_path": str(adapter_config_path),
+            "adapter_config_exists": True,
+            "adapter_config_error": repr(exc),
+        }
+    return {
+        "adapter_config_path": str(adapter_config_path),
+        "adapter_config_exists": True,
+        "adapter_target_modules": adapter_config.get("target_modules"),
+        "adapter_r": adapter_config.get("r"),
+        "adapter_lora_alpha": adapter_config.get("lora_alpha"),
+        "adapter_lora_dropout": adapter_config.get("lora_dropout"),
+    }
+
+
+def write_debug_prompt(dataset: Any, output_dir: str | Path, cfg: dict[str, Any]) -> None:
     if get_rank() != 0 or len(dataset) == 0:
         return
     debug_dir = Path(output_dir) / "debug"
     debug_dir.mkdir(parents=True, exist_ok=True)
     first_prompt = str(dataset[0]["prompt"])
     (debug_dir / "first_grpo_prompt.txt").write_text(first_prompt, encoding="utf-8")
+    debug_info = {
+        "model_adapter_name_or_path": cfg.get("model", {}).get("adapter_name_or_path"),
+        "yaml_lora_target_modules": cfg.get("lora", {}).get("target_modules"),
+        **load_adapter_debug_info(cfg.get("model", {}).get("adapter_name_or_path")),
+    }
+    (debug_dir / "adapter_target_modules.json").write_text(
+        json.dumps(debug_info, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def slot_text(value: Any) -> str:
@@ -577,7 +610,7 @@ def main() -> None:
         dataset = dataset.select(range(min(int(max_samples), len(dataset))))
 
     dataset = dataset.map(lambda row: normalize_prompt(row, cfg["data"], tokenizer), remove_columns=dataset.column_names)
-    write_debug_prompt(dataset, training_cfg["output_dir"])
+    write_debug_prompt(dataset, training_cfg["output_dir"], cfg)
     reward_func = select_reward_function(str(cfg.get("reward", {}).get("name", "exact_or_contains")))
     generation_kwargs = build_generation_kwargs(tokenizer, training_cfg)
     training_cfg["generation_kwargs"] = generation_kwargs
