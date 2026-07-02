@@ -601,7 +601,6 @@ def main() -> None:
         num_generations=int(training_cfg.get("num_generations", 2)),
         temperature=float(training_cfg.get("temperature", 0.7)),
         generation_kwargs=generation_kwargs,
-        chat_template_kwargs={"enable_thinking": False},
         log_completions=bool(training_cfg.get("log_completions", False)),
         num_completions_to_print=training_cfg.get("num_completions_to_print"),
         report_to=training_cfg.get("report_to", "none"),
