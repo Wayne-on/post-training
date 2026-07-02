@@ -104,6 +104,14 @@ def leaf_name(module_path: str) -> str:
     return module_path.rsplit(".", 1)[-1]
 
 
+def target_modules_from_model(model: Any, target_modules: set[str]) -> set[str]:
+    return {
+        name
+        for name, _module in model.named_modules()
+        if name and leaf_name(name) in target_modules
+    }
+
+
 def list_model_target_modules(model_name_or_path: str, target_modules: set[str]) -> tuple[set[str], str | None]:
     try:
         from accelerate import init_empty_weights
@@ -111,18 +119,54 @@ def list_model_target_modules(model_name_or_path: str, target_modules: set[str])
     except Exception as exc:
         return set(), f"model inspection imports failed: {exc!r}"
 
+    errors: list[str] = []
     try:
         config = AutoConfig.from_pretrained(model_name_or_path, trust_remote_code=True)
         with init_empty_weights():
             model = AutoModelForCausalLM.from_config(config, trust_remote_code=True)
+        return target_modules_from_model(model, target_modules), None
+    except Exception as exc:
+        errors.append(f"from_config failed: {exc!r}")
+
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name_or_path,
+            trust_remote_code=True,
+            torch_dtype="auto",
+            low_cpu_mem_usage=True,
+            device_map={"": "meta"},
+        )
+        return target_modules_from_model(model, target_modules), None
+    except Exception as exc:
+        errors.append(f"from_pretrained meta failed: {exc!r}")
+
+    return set(), "model architecture inspection failed: " + " | ".join(errors)
+
+
+def peft_load_probe(model_name_or_path: str, adapter_name_or_path: str) -> tuple[set[str], str | None]:
+    try:
+        from transformers import AutoModelForCausalLM
+        from peft import PeftModel
+    except Exception as exc:
+        return set(), f"PEFT load probe imports failed: {exc!r}"
+
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name_or_path,
+            trust_remote_code=True,
+            torch_dtype="auto",
+            low_cpu_mem_usage=True,
+            device_map={"": "meta"},
+        )
+        model = PeftModel.from_pretrained(model, adapter_name_or_path, is_trainable=True)
         modules = {
-            name
-            for name, _module in model.named_modules()
-            if name and leaf_name(name) in target_modules
+            canonical_module_path(name.rsplit(".lora_A.", 1)[0])
+            for name, _parameter in model.named_parameters()
+            if ".lora_A." in name
         }
         return modules, None
     except Exception as exc:
-        return set(), f"model architecture inspection failed: {exc!r}"
+        return set(), f"PEFT load probe failed: {exc!r}"
 
 
 def print_section(title: str) -> None:
@@ -144,6 +188,7 @@ def main() -> None:
     parser.add_argument("--model-name-or-path", help="Override model.name_or_path from config.")
     parser.add_argument("--adapter-name-or-path", help="Override model.adapter_name_or_path from config.")
     parser.add_argument("--no-model-inspect", action="store_true", help="Skip empty-weight model module inspection.")
+    parser.add_argument("--no-peft-probe", action="store_true", help="Skip PEFT meta-load probe.")
     parser.add_argument("--show-limit", type=int, default=30, help="Number of module names to show in mismatch lists.")
     args = parser.parse_args()
 
@@ -248,6 +293,30 @@ def main() -> None:
     for item in first_items(unexpected_in_adapter, args.show_limit):
         print(f"- unexpected: {item}")
 
+    peft_loaded_modules: set[str] = set()
+    peft_missing_from_weights: set[str] = set()
+    peft_unloaded_weights: set[str] = set()
+    print_section("6. PEFT Meta-load Probe")
+    if args.no_peft_probe:
+        print("skipped by --no-peft-probe")
+    else:
+        peft_loaded_modules, peft_error = peft_load_probe(str(model_name_or_path), str(adapter_dir))
+        if peft_error:
+            print(f"WARNING: {peft_error}")
+        else:
+            peft_loaded_counts = Counter(leaf_name(module) for module in peft_loaded_modules)
+            print(f"PEFT loaded LoRA modules: {len(peft_loaded_modules)}")
+            print("PEFT loaded LoRA module leaf counts:")
+            print_counter(peft_loaded_counts)
+            peft_missing_from_weights = peft_loaded_modules - lora_modules
+            peft_unloaded_weights = lora_modules - peft_loaded_modules
+            print(f"PEFT-loaded modules missing from adapter weights: {len(peft_missing_from_weights)}")
+            for item in first_items(peft_missing_from_weights, args.show_limit):
+                print(f"- peft missing weight: {item}")
+            print(f"adapter weight modules not loaded by PEFT: {len(peft_unloaded_weights)}")
+            for item in first_items(peft_unloaded_weights, args.show_limit):
+                print(f"- peft unloaded adapter weight: {item}")
+
     print_section("Summary")
     if not same_base:
         print("FAIL: configured base model and adapter base model differ.")
@@ -259,6 +328,12 @@ def main() -> None:
     elif unexpected_in_adapter:
         print("FAIL: adapter has LoRA modules that are not present in current model.")
         print("This points to base model / Transformers implementation mismatch.")
+    elif peft_missing_from_weights:
+        print("FAIL: PEFT is creating LoRA modules that are not present in adapter weights.")
+        print("This directly explains missing adapter key warnings.")
+    elif peft_unloaded_weights:
+        print("FAIL: PEFT did not load some adapter weight modules.")
+        print("This points to module naming or base model implementation mismatch.")
     else:
         print("PASS: base path, target modules, adapter files, and architecture coverage look compatible.")
 
