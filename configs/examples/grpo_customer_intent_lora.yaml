@@ -18,7 +18,7 @@ data:
   style_prefix_field: style_prefix
 
 reward:
-  name: customer_service_json
+  name: customer_service_json_strict
 
 lora:
   enabled: true
@@ -42,7 +42,7 @@ lora:
     ]
 
 training:
-  output_dir: outputs/grpo/customer-intent-qwen3_5-9b-lora-json-prefix-nothink-decode-aligned
+  output_dir: outputs/grpo/customer-intent-qwen3_5-9b-lora-json-prefix-strict-reward
   num_train_epochs: 2
   per_device_train_batch_size: 1
   gradient_accumulation_steps: 8

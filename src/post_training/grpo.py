@@ -26,6 +26,10 @@ from post_training.common import (
 
 
 FORBIDDEN_THINKING_REWARD = -10.0
+STRICT_REWARD_HARD_FAIL = 0.0
+STRICT_REWARD_MAX = 10.0
+EXPECTED_TOP_LEVEL_KEYS = {"intent", "slots", "reply"}
+EXPECTED_SLOT_KEYS = {"phone", "waybill_no"}
 FORBIDDEN_THINKING_MARKERS = (
     "<think",
     "</think",
@@ -117,6 +121,21 @@ def parse_strict_json_object(text: str) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+def exact_keys(value: dict[str, Any], expected: set[str]) -> bool:
+    return set(value.keys()) == expected
+
+
+def json_null_or_string(value: Any) -> bool:
+    return value is None or isinstance(value, str)
+
+
+def parse_expected_answer(answer: Any) -> dict[str, Any]:
+    if not answer:
+        return {}
+    parsed = parse_strict_json_object(str(answer))
+    return parsed or {}
+
+
 def has_markdown_or_extra_explanation(text: str) -> bool:
     stripped = text.strip()
     if "```" in stripped or stripped.startswith("#") or stripped.startswith("- "):
@@ -127,6 +146,31 @@ def has_markdown_or_extra_explanation(text: str) -> bool:
 def has_forbidden_thinking_text(text: str) -> bool:
     normalized = text.strip().lower()
     return any(marker in normalized for marker in FORBIDDEN_THINKING_MARKERS)
+
+
+def char_f1(a: str, b: str) -> float:
+    a_chars = [char for char in a.strip() if not char.isspace()]
+    b_chars = [char for char in b.strip() if not char.isspace()]
+    if not a_chars or not b_chars:
+        return 0.0
+
+    b_counts: dict[str, int] = {}
+    for char in b_chars:
+        b_counts[char] = b_counts.get(char, 0) + 1
+
+    overlap = 0
+    for char in a_chars:
+        count = b_counts.get(char, 0)
+        if count > 0:
+            overlap += 1
+            b_counts[char] = count - 1
+
+    if overlap == 0:
+        return 0.0
+
+    precision = overlap / len(a_chars)
+    recall = overlap / len(b_chars)
+    return 2 * precision * recall / (precision + recall)
 
 
 def build_bad_words_ids(tokenizer: Any, texts: tuple[str, ...]) -> list[list[int]]:
@@ -219,20 +263,23 @@ def has_hallucinated_identifier(obj: dict[str, Any], expected_phone: str, expect
 
 def customer_service_json_reward(
     completions: list[Any],
+    answer: list[str] | str | None = None,
     intent: list[str] | str | None = None,
     phone: list[str] | str | None = None,
     waybill_no: list[str] | str | None = None,
     style_prefix: list[str] | str | None = None,
+    allowed_intents: set[str] | None = None,
     **_: Any,
 ) -> list[float]:
+    answers = as_list(answer or "", len(completions))
     intents = as_list(intent or "", len(completions))
     phones = as_list(phone or "", len(completions))
     waybills = as_list(waybill_no or "", len(completions))
     style_prefixes = as_list(style_prefix or "", len(completions))
     rewards: list[float] = []
 
-    for completion, expected_intent, expected_phone, expected_waybill, expected_prefix in zip(
-        completions, intents, phones, waybills, style_prefixes
+    for completion, expected_answer, expected_intent, expected_phone, expected_waybill, expected_prefix in zip(
+        completions, answers, intents, phones, waybills, style_prefixes
     ):
         text = completion_to_text(completion)
         if has_forbidden_thinking_text(text):
@@ -240,37 +287,68 @@ def customer_service_json_reward(
             continue
 
         obj = parse_strict_json_object(text)
-        reward = 0.0
-
         if obj is None:
-            rewards.append(-2.0)
+            rewards.append(STRICT_REWARD_HARD_FAIL)
             continue
 
-        reward += 1.0  # legal JSON object
-        slots = obj.get("slots")
-        has_schema = isinstance(slots, dict) and all(key in obj for key in ("intent", "slots", "reply"))
-        if has_schema and "phone" in slots and "waybill_no" in slots:
-            reward += 1.0
+        if not exact_keys(obj, EXPECTED_TOP_LEVEL_KEYS):
+            rewards.append(STRICT_REWARD_HARD_FAIL)
+            continue
 
-        actual_intent = slot_text(obj.get("intent"))
-        actual_phone = slot_text(slots.get("phone")) if isinstance(slots, dict) else ""
-        actual_waybill = slot_text(slots.get("waybill_no")) if isinstance(slots, dict) else ""
+        slots = obj.get("slots")
+        if not isinstance(slots, dict) or not exact_keys(slots, EXPECTED_SLOT_KEYS):
+            rewards.append(STRICT_REWARD_HARD_FAIL)
+            continue
+
+        if not isinstance(obj.get("intent"), str):
+            rewards.append(STRICT_REWARD_HARD_FAIL)
+            continue
+        if not isinstance(obj.get("reply"), str):
+            rewards.append(STRICT_REWARD_HARD_FAIL)
+            continue
+        if not json_null_or_string(slots.get("phone")) or not json_null_or_string(slots.get("waybill_no")):
+            rewards.append(STRICT_REWARD_HARD_FAIL)
+            continue
+
+        actual_intent = slot_text(obj["intent"])
+        actual_phone = slot_text(slots["phone"])
+        actual_waybill = slot_text(slots["waybill_no"])
         reply = slot_text(obj.get("reply"))
 
-        if expected_intent and actual_intent == expected_intent:
-            reward += 1.0
-        if actual_phone == slot_text(expected_phone):
-            reward += 1.0
-        if actual_waybill == slot_text(expected_waybill):
-            reward += 1.0
-        if reply and not has_markdown_or_extra_explanation(text):
-            reward += 1.0
-        if expected_prefix and reply.startswith(slot_text(expected_prefix)):
-            reward += 2.0
         if has_markdown_or_extra_explanation(text):
-            reward -= 1.0
+            rewards.append(STRICT_REWARD_HARD_FAIL)
+            continue
         if has_hallucinated_identifier(obj, slot_text(expected_phone), slot_text(expected_waybill)):
-            reward -= 2.0
+            rewards.append(STRICT_REWARD_HARD_FAIL)
+            continue
+        if allowed_intents and actual_intent not in allowed_intents:
+            rewards.append(STRICT_REWARD_HARD_FAIL)
+            continue
+        if expected_intent and actual_intent != slot_text(expected_intent):
+            rewards.append(STRICT_REWARD_HARD_FAIL)
+            continue
+        if actual_phone != slot_text(expected_phone):
+            rewards.append(STRICT_REWARD_HARD_FAIL)
+            continue
+        if actual_waybill != slot_text(expected_waybill):
+            rewards.append(STRICT_REWARD_HARD_FAIL)
+            continue
+        if not reply:
+            rewards.append(STRICT_REWARD_HARD_FAIL)
+            continue
+        if expected_prefix and not reply.startswith(slot_text(expected_prefix)):
+            rewards.append(STRICT_REWARD_HARD_FAIL)
+            continue
+
+        expected_obj = parse_expected_answer(expected_answer)
+        expected_reply = slot_text(expected_obj.get("reply"))
+        reply_similarity = char_f1(reply, expected_reply)
+
+        reward = 6.0
+        reward += 1.0 if expected_prefix and reply.startswith(slot_text(expected_prefix)) else 0.5
+        reward += min(2.0, 2.0 * reply_similarity)
+        reward += 1.0 if 8 <= len(reply) <= 160 else 0.5
+        reward = min(STRICT_REWARD_MAX, reward)
 
         rewards.append(reward)
     return rewards
@@ -289,9 +367,16 @@ def exact_or_contains_reward(completions: list[str], answer: list[str] | str | N
     return rewards
 
 
-def select_reward_function(name: str):
-    if name == "customer_service_json":
-        return customer_service_json_reward
+def build_reward_function(name: str, allowed_intents: set[str] | None = None):
+    if name in {"customer_service_json", "customer_service_json_strict"}:
+        def reward_func(completions: list[Any], **kwargs: Any) -> list[float]:
+            return customer_service_json_reward(
+                completions=completions,
+                allowed_intents=allowed_intents,
+                **kwargs,
+            )
+
+        return reward_func
     if name == "exact_or_contains":
         return exact_or_contains_reward
     raise ValueError(f"Unsupported reward function: {name}")
@@ -475,6 +560,9 @@ def build_benchmark_report(
         "method": "grpo",
         "finetuning_type": "lora" if cfg.get("lora", {}).get("enabled") or model_cfg.get("adapter_name_or_path") else "full",
         "reward_function": reward_cfg.get("name", "exact_or_contains"),
+        "reward_hard_fail_score": STRICT_REWARD_HARD_FAIL,
+        "reward_forbidden_thinking_score": FORBIDDEN_THINKING_REWARD,
+        "reward_max_score": STRICT_REWARD_MAX,
         "deepspeed_config": training_cfg.get("deepspeed"),
         "model_parameter_count": total_params,
         "model_parameter_count_billions": (total_params / 1_000_000_000) if total_params else None,
@@ -528,6 +616,9 @@ def write_benchmark_report(report: dict[str, Any], output_dir: str | Path) -> No
         ("method", report.get("method")),
         ("finetuning_type", report.get("finetuning_type")),
         ("reward_function", report.get("reward_function")),
+        ("reward_hard_fail_score", report.get("reward_hard_fail_score")),
+        ("reward_forbidden_thinking_score", report.get("reward_forbidden_thinking_score")),
+        ("reward_max_score", report.get("reward_max_score")),
         ("deepspeed_config", report.get("deepspeed_config")),
         ("model_parameter_count", report.get("model_parameter_count")),
         ("model_parameter_count_billions", report.get("model_parameter_count_billions")),
@@ -609,9 +700,19 @@ def main() -> None:
     if max_samples is not None:
         dataset = dataset.select(range(min(int(max_samples), len(dataset))))
 
+    intent_field = cfg["data"].get("intent_field", "intent")
+    allowed_intents = {
+        slot_text(value)
+        for value in dataset[intent_field]
+        if slot_text(value)
+    } if intent_field in dataset.column_names else set()
+
     dataset = dataset.map(lambda row: normalize_prompt(row, cfg["data"], tokenizer), remove_columns=dataset.column_names)
     write_debug_prompt(dataset, training_cfg["output_dir"], cfg)
-    reward_func = select_reward_function(str(cfg.get("reward", {}).get("name", "exact_or_contains")))
+    reward_func = build_reward_function(
+        str(cfg.get("reward", {}).get("name", "exact_or_contains")),
+        allowed_intents=allowed_intents or None,
+    )
     generation_kwargs = build_generation_kwargs(tokenizer, training_cfg)
     training_cfg["generation_kwargs"] = generation_kwargs
 
