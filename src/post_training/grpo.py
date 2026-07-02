@@ -32,11 +32,37 @@ FORBIDDEN_THINKING_MARKERS = (
     "thinking process",
     "analyze the request",
     "reasoning process",
-    "推理过程",
-    "分析步骤",
-    "思考过程",
+    "\u63a8\u7406\u8fc7\u7a0b",
+    "\u5206\u6790\u6b65\u9aa4",
+    "\u601d\u8003\u8fc7\u7a0b",
 )
-
+THINKING_SUPPRESSION_TEXTS = (
+    "<think",
+    "<think>",
+    " <think",
+    " <think>",
+    "\n<think",
+    "\n<think>",
+    "\n\n<think",
+    "\n\n<think>",
+    "</think",
+    "</think>",
+    " </think",
+    " </think>",
+    "\n</think",
+    "\n</think>",
+    "Thinking Process",
+    "thinking process",
+    "\nThinking Process",
+    "\nthinking process",
+    "Analyze the Request",
+    "analyze the request",
+    "Reasoning Process",
+    "reasoning process",
+    "\u63a8\u7406\u8fc7\u7a0b",
+    "\u5206\u6790\u6b65\u9aa4",
+    "\u601d\u8003\u8fc7\u7a0b",
+)
 
 def apply_no_think_chat_template(tokenizer: Any, prompt: str) -> str:
     messages = [{"role": "user", "content": prompt}]
@@ -101,6 +127,40 @@ def has_markdown_or_extra_explanation(text: str) -> bool:
 def has_forbidden_thinking_text(text: str) -> bool:
     normalized = text.strip().lower()
     return any(marker in normalized for marker in FORBIDDEN_THINKING_MARKERS)
+
+
+def build_bad_words_ids(tokenizer: Any, texts: tuple[str, ...]) -> list[list[int]]:
+    bad_words_ids: list[list[int]] = []
+    seen: set[tuple[int, ...]] = set()
+    for text in texts:
+        tokenized = tokenizer(text, add_special_tokens=False)
+        token_ids = tokenized.get("input_ids", [])
+        if not token_ids:
+            continue
+        key = tuple(int(token_id) for token_id in token_ids)
+        if key not in seen:
+            seen.add(key)
+            bad_words_ids.append(list(key))
+    return bad_words_ids
+
+
+def build_generation_kwargs(tokenizer: Any, training_cfg: dict[str, Any]) -> dict[str, Any]:
+    generation_kwargs = dict(training_cfg.get("generation_kwargs") or {})
+    if bool(training_cfg.get("suppress_thinking_tokens", True)):
+        existing_bad_words = generation_kwargs.get("bad_words_ids") or []
+        generation_kwargs["bad_words_ids"] = existing_bad_words + build_bad_words_ids(
+            tokenizer, THINKING_SUPPRESSION_TEXTS
+        )
+    return generation_kwargs
+
+
+def write_debug_prompt(dataset: Any, output_dir: str | Path) -> None:
+    if get_rank() != 0 or len(dataset) == 0:
+        return
+    debug_dir = Path(output_dir) / "debug"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    first_prompt = str(dataset[0]["prompt"])
+    (debug_dir / "first_grpo_prompt.txt").write_text(first_prompt, encoding="utf-8")
 
 
 def slot_text(value: Any) -> str:
@@ -397,6 +457,8 @@ def build_benchmark_report(
         "max_prompt_length": max_prompt_length,
         "max_completion_length": max_completion_length,
         "temperature": training_cfg.get("temperature"),
+        "suppress_thinking_tokens": training_cfg.get("suppress_thinking_tokens", True),
+        "bad_words_ids_count": len(training_cfg.get("generation_kwargs", {}).get("bad_words_ids", [])),
         "train_runtime_seconds": runtime_float,
         "train_samples_per_second": train_metrics.get("train_samples_per_second"),
         "train_steps_per_second": train_metrics.get("train_steps_per_second"),
@@ -515,7 +577,10 @@ def main() -> None:
         dataset = dataset.select(range(min(int(max_samples), len(dataset))))
 
     dataset = dataset.map(lambda row: normalize_prompt(row, cfg["data"], tokenizer), remove_columns=dataset.column_names)
+    write_debug_prompt(dataset, training_cfg["output_dir"])
     reward_func = select_reward_function(str(cfg.get("reward", {}).get("name", "exact_or_contains")))
+    generation_kwargs = build_generation_kwargs(tokenizer, training_cfg)
+    training_cfg["generation_kwargs"] = generation_kwargs
 
     grpo_args = GRPOConfig(
         output_dir=training_cfg["output_dir"],
@@ -535,6 +600,10 @@ def main() -> None:
         max_completion_length=int(training_cfg.get("max_completion_length", 256)),
         num_generations=int(training_cfg.get("num_generations", 2)),
         temperature=float(training_cfg.get("temperature", 0.7)),
+        generation_kwargs=generation_kwargs,
+        chat_template_kwargs={"enable_thinking": False},
+        log_completions=bool(training_cfg.get("log_completions", False)),
+        num_completions_to_print=training_cfg.get("num_completions_to_print"),
         report_to=training_cfg.get("report_to", "none"),
         remove_unused_columns=False,
     )
