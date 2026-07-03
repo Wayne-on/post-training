@@ -467,10 +467,21 @@ Customer-intent JSON reward smoke test:
 ```bash
 python scripts/build_customer_intent_grpo_json_reward.py
 
+python scripts/convert_peft_adapter_key_prefix.py \
+  --source outputs/llamafactory/local-qwen3_5-9b/lora/sft_10k_3ep_messages \
+  --output outputs/llamafactory/local-qwen3_5-9b/lora/sft_10k_3ep_messages_trl_compat \
+  --force
+
+python scripts/check_lora_adapter_compat.py \
+  configs/examples/grpo_customer_intent_lora.yaml
+
 torchrun --nproc_per_node=8 \
   src/post_training/grpo.py \
   configs/examples/grpo_customer_intent_lora.yaml
 ```
+
+The conversion step rewrites the LLaMA-Factory adapter key prefix from
+`base_model.model.model.language_model.` to `base_model.model.model.` for the TRL/Transformers Qwen3.5 module layout.
 
 This GRPO smoke test starts from the Qwen3.5-9B SFT LoRA adapter and uses a rule reward that scores valid JSON,
 schema fields, slot correctness, intent correctness, no extra Markdown/explanation, no hallucinated phone/waybill,

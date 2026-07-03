@@ -1,6 +1,6 @@
 model:
   name_or_path: /root/nfs/llm-models/Qwen3.5-9B
-  adapter_name_or_path: outputs/llamafactory/local-qwen3_5-9b/lora/sft_10k_3ep_messages
+  adapter_name_or_path: outputs/llamafactory/local-qwen3_5-9b/lora/sft_10k_3ep_messages_trl_compat
   trust_remote_code: true
   attn_implementation: sdpa
   torch_dtype: bfloat16
@@ -42,7 +42,7 @@ lora:
     ]
 
 training:
-  output_dir: outputs/grpo/customer-intent-qwen3_5-9b-lora-json-prefix-strict-reward
+  output_dir: outputs/grpo/customer-intent-qwen3_5-9b-lora-json-prefix-strict-reward-adapterfix
   num_train_epochs: 2
   per_device_train_batch_size: 1
   gradient_accumulation_steps: 8
