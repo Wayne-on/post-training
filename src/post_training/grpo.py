@@ -30,6 +30,11 @@ STRICT_REWARD_HARD_FAIL = 0.0
 STRICT_REWARD_MAX = 10.0
 EXPECTED_TOP_LEVEL_KEYS = {"intent", "slots", "reply"}
 EXPECTED_SLOT_KEYS = {"phone", "waybill_no"}
+GENERIC_FALLBACK_REPLY_MARKERS = (
+    "\u8fd9\u53e5\u8bdd\u6682\u65f6\u65e0\u6cd5\u5224\u65ad",
+    "\u8bf7\u8865\u5145\u8fd0\u5355\u53f7",
+    "\u8bf7\u8865\u5145\u8fd0\u5355\u53f7\u3001\u8ba2\u5355\u4fe1\u606f",
+)
 FORBIDDEN_THINKING_MARKERS = (
     "<think",
     "</think",
@@ -173,6 +178,14 @@ def char_f1(a: str, b: str) -> float:
     return 2 * precision * recall / (precision + recall)
 
 
+def clamp_reward(value: float) -> float:
+    return max(STRICT_REWARD_HARD_FAIL, min(STRICT_REWARD_MAX, value))
+
+
+def is_generic_fallback_reply(reply: str) -> bool:
+    return any(marker in reply for marker in GENERIC_FALLBACK_REPLY_MARKERS)
+
+
 def build_bad_words_ids(tokenizer: Any, texts: tuple[str, ...]) -> list[list[int]]:
     bad_words_ids: list[list[int]] = []
     seen: set[tuple[int, ...]] = set()
@@ -314,43 +327,62 @@ def customer_service_json_reward(
         actual_phone = slot_text(slots["phone"])
         actual_waybill = slot_text(slots["waybill_no"])
         reply = slot_text(obj.get("reply"))
+        expected_intent_text = slot_text(expected_intent)
+        expected_phone_text = slot_text(expected_phone)
+        expected_waybill_text = slot_text(expected_waybill)
+        expected_prefix_text = slot_text(expected_prefix)
 
+        reward = 2.0
         if has_markdown_or_extra_explanation(text):
-            rewards.append(STRICT_REWARD_HARD_FAIL)
-            continue
-        if has_hallucinated_identifier(obj, slot_text(expected_phone), slot_text(expected_waybill)):
-            rewards.append(STRICT_REWARD_HARD_FAIL)
-            continue
-        if allowed_intents and actual_intent not in allowed_intents:
-            rewards.append(STRICT_REWARD_HARD_FAIL)
-            continue
-        if expected_intent and actual_intent != slot_text(expected_intent):
-            rewards.append(STRICT_REWARD_HARD_FAIL)
-            continue
-        if actual_phone != slot_text(expected_phone):
-            rewards.append(STRICT_REWARD_HARD_FAIL)
-            continue
-        if actual_waybill != slot_text(expected_waybill):
-            rewards.append(STRICT_REWARD_HARD_FAIL)
-            continue
+            reward -= 1.0
+        else:
+            reward += 0.5
+
+        if has_hallucinated_identifier(obj, expected_phone_text, expected_waybill_text):
+            reward -= 2.0
+
+        if allowed_intents:
+            reward += 0.25 if actual_intent in allowed_intents else -1.0
+
+        if expected_intent_text:
+            if actual_intent == expected_intent_text:
+                reward += 1.5
+            elif allowed_intents and actual_intent in allowed_intents:
+                reward -= 1.0
+            else:
+                reward -= 1.5
+
+        if actual_phone == expected_phone_text:
+            reward += 1.0
+        elif actual_phone:
+            reward -= 1.0
+
+        if actual_waybill == expected_waybill_text:
+            reward += 1.0
+        elif actual_waybill:
+            reward -= 1.0
+
         if not reply:
             rewards.append(STRICT_REWARD_HARD_FAIL)
             continue
-        if expected_prefix and not reply.startswith(slot_text(expected_prefix)):
-            rewards.append(STRICT_REWARD_HARD_FAIL)
-            continue
+
+        reward += 0.5
+        has_expected_prefix = bool(expected_prefix_text and reply.startswith(expected_prefix_text))
+        if expected_prefix_text:
+            reward += 3.0 if has_expected_prefix else -1.5
 
         expected_obj = parse_expected_answer(expected_answer)
         expected_reply = slot_text(expected_obj.get("reply"))
-        reply_similarity = char_f1(reply, expected_reply)
+        reply_for_similarity = reply[len(expected_prefix_text):].strip() if has_expected_prefix else reply
+        reply_similarity = char_f1(reply_for_similarity, expected_reply)
 
-        reward = 6.0
-        reward += 1.0 if expected_prefix and reply.startswith(slot_text(expected_prefix)) else 0.5
-        reward += min(2.0, 2.0 * reply_similarity)
-        reward += 1.0 if 8 <= len(reply) <= 160 else 0.5
-        reward = min(STRICT_REWARD_MAX, reward)
+        reward += min(1.0, reply_similarity)
+        reward += 0.25 if 8 <= len(reply) <= 160 else -0.25
 
-        rewards.append(reward)
+        if expected_intent_text and expected_intent_text != "\u5176\u4ed6" and is_generic_fallback_reply(reply):
+            reward -= 2.0
+
+        rewards.append(clamp_reward(reward))
     return rewards
 
 
@@ -368,7 +400,7 @@ def exact_or_contains_reward(completions: list[str], answer: list[str] | str | N
 
 
 def build_reward_function(name: str, allowed_intents: set[str] | None = None):
-    if name in {"customer_service_json", "customer_service_json_strict"}:
+    if name in {"customer_service_json", "customer_service_json_strict", "customer_service_json_staged"}:
         def reward_func(completions: list[Any], **kwargs: Any) -> list[float]:
             return customer_service_json_reward(
                 completions=completions,
