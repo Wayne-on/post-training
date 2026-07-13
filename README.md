@@ -2,6 +2,11 @@
 
 This repository is a Docker-first scaffold for post-training experiments on 8-GPU and 16-GPU NVIDIA servers.
 
+For the verified experiment history, server-only artifact boundaries, current
+GRPO state, and the Hygon KW1000 handoff, read
+[`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md). Codex sessions should follow
+the repository guidance in [`AGENTS.md`](AGENTS.md) first.
+
 Current target machines:
 
 - Node A: 8 GPUs, 80GB VRAM each, driver `550.54.14`, `nvidia-smi` CUDA `12.4`.
