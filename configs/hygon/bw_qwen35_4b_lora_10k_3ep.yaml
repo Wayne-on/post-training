@@ -1,0 +1,118 @@
+experiment:
+  name: bw-qwen35-4b-peft-lora-10k-3ep
+  purpose: eight-device ZeRO-2 compatibility reproduction of the historical A800 4B LoRA run
+
+comparison:
+  baseline: a800-qwen35-4b-lora-zero2-10k-3ep-2k
+  baseline_framework: LLaMA-Factory
+  classification: cross-framework hardware compatibility reproduction, not a hardware-only benchmark
+  baseline_tokens_per_second_per_gpu: 125.90
+  baseline_runtime_hours: 1.21
+  baseline_peak_memory_gib: 12.21
+  baseline_train_loss: 0.0760
+  baseline_average_tokens_per_sample: 145.87
+  baseline_total_parameters_approx: 4.660B
+  baseline_trainable_parameters_approx: 32.465M
+  parameter_scope_note: A800 LLaMA-Factory and BW direct AutoModelForCausalLM parameter scopes are not identical
+
+runtime:
+  transformers_version: 5.6.0
+  minimum_peft_version: 0.18.0
+
+model:
+  name_or_path: /root/private_data/models/Qwen3.5-4B
+  expected_model_class: Qwen3_5ForCausalLM
+  trust_remote_code: false
+  local_files_only: true
+  use_fast_tokenizer: true
+  attn_implementation: null
+  torch_dtype: bfloat16
+
+data:
+  path: examples/datasets/customer_intent_sft_smoke.jsonl
+  split: train
+  expected_source_sample_count: 10000
+  expected_sha256: e88f950159fb4bd35d5642aa2d0e0224f5f6ad794bb09530579191744a3ce687
+  messages_field: messages
+  prompt_field: prompt
+  response_field: response
+  max_samples: 10000
+  sample_strategy: first
+  sample_seed: 42
+  max_seq_length: 2048
+  train_on_prompt: false
+  chat_template_kwargs:
+    enable_thinking: false
+  pad_to_multiple_of: 8
+  load_from_cache_file: false
+
+finetuning:
+  method: lora
+  model_scope: Qwen3_5ForCausalLM returned by Transformers AutoModelForCausalLM
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  bias: none
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+    - out_proj
+    - in_proj_qkv
+    - in_proj_z
+    - in_proj_b
+    - in_proj_a
+  expected_trainable_parameters: 32464896
+  expected_lora_module_count: 248
+  expected_adapter_tensor_count: 496
+  expected_adapter_key_prefix: base_model.model.model.
+
+training:
+  output_dir: outputs/transformers-peft/bw-qwen35-4b/lora/sft_customer_intent_10k_3ep_bs1_ga8_zero2
+  expected_world_size: 8
+  num_train_epochs: 3
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 8
+  learning_rate: 2.0e-4
+  weight_decay: 0.0
+  warmup_ratio: 0.03
+  lr_scheduler_type: cosine
+  logging_steps: 10
+  logging_first_step: false
+  logging_nan_inf_filter: true
+  save_strategy: steps
+  save_steps: 200
+  save_total_limit: 2
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: true
+  gradient_checkpointing_input_require_grads: true
+  bf16: true
+  fp16: false
+  optim: adamw_torch
+  max_grad_norm: 1.0
+  report_to: tensorboard
+  dataloader_num_workers: 4
+  dataloader_drop_last: false
+  ddp_find_unused_parameters: false
+  ddp_backend: nccl
+  ddp_timeout: 180000000
+  deepspeed: configs/deepspeed/zero2_bf16.json
+  expected_deepspeed_stage: 2
+  seed: 42
+  data_seed: 42
+
+benchmark:
+  require_gpu_utilization: true
+  minimum_gpu_samples_per_device: 2
+  gpu_monitor:
+    command: auto
+    parser: auto
+    interval_seconds: 2.0
+    timeout_seconds: 5.0

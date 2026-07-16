@@ -52,4 +52,5 @@
 - The detailed, cross-machine handoff is `docs/PROJECT_STATE.md`.
 - The current GRPO config is `configs/examples/grpo_customer_intent_lora.yaml`.
 - The current GRPO reward is `customer_service_json_staged` in `src/post_training/grpo.py`.
-- The next hardware work is KW1000/DCU environment discovery and the smallest possible smoke test, not immediate reproduction of the full A800 matrix.
+- The BW1000 phase has completed Qwen3.5-4B LoRA/Full and Qwen3.6-27B LoRA formal SFT runs through `src/post_training/sft_peft.py`; the exact results and server-only output paths are recorded in `docs/PROJECT_STATE.md`.
+- For another accelerator, reuse the direct runner only after fresh environment discovery and the smallest matching smoke config. Do not assume the BW PyTorch/DTK, visibility variables, DeepSpeed integration, or monitoring commands apply unchanged.

@@ -1,0 +1,89 @@
+experiment:
+  name: bw-qwen35-4b-full-zero3-smoke-128
+  purpose: eight-device ZeRO-3 full fine-tuning integration smoke before the controlled 10k x 3 epoch run
+
+runtime:
+  transformers_version: 5.6.0
+  minimum_peft_version: 0.18.0
+
+model:
+  name_or_path: /root/private_data/models/Qwen3.5-4B
+  expected_model_class: Qwen3_5ForCausalLM
+  trust_remote_code: false
+  local_files_only: true
+  use_fast_tokenizer: true
+  attn_implementation: null
+  torch_dtype: bfloat16
+
+data:
+  path: examples/datasets/customer_intent_sft_smoke.jsonl
+  split: train
+  expected_source_sample_count: 10000
+  expected_sha256: e88f950159fb4bd35d5642aa2d0e0224f5f6ad794bb09530579191744a3ce687
+  messages_field: messages
+  prompt_field: prompt
+  response_field: response
+  max_samples: 128
+  sample_strategy: shuffle
+  sample_seed: 42
+  max_seq_length: 2048
+  train_on_prompt: false
+  chat_template_kwargs:
+    enable_thinking: false
+  pad_to_multiple_of: 8
+  load_from_cache_file: false
+
+finetuning:
+  method: full
+  model_scope: all parameters in Qwen3_5ForCausalLM returned by Transformers AutoModelForCausalLM
+  expected_total_parameters: 4205751296
+  expected_trainable_parameters: 4205751296
+  expected_frozen_parameters: 0
+  expected_parameter_count_basis: BW server-measured Qwen3_5ForCausalLM text scope with tied embeddings; includes 4096 q_norm/k_norm parameters across eight full-attention layers; excludes the vision tower
+  minimum_trainable_percent: 99.99
+  fresh_reload_validation: true
+
+training:
+  output_dir: outputs/transformers-peft/bw-qwen35-4b/full/sft_customer_intent_zero3_smoke_128_1ep_bs1_ga8
+  expected_world_size: 8
+  num_train_epochs: 1
+  max_steps: 2
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 8
+  learning_rate: 1.0e-5
+  weight_decay: 0.0
+  warmup_ratio: 0.03
+  lr_scheduler_type: cosine
+  logging_steps: 1
+  logging_first_step: true
+  logging_nan_inf_filter: false
+  save_strategy: "no"
+  save_only_model: true
+  require_safetensors: true
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: true
+  bf16: true
+  fp16: false
+  optim: adamw_torch
+  max_grad_norm: 1.0
+  report_to: none
+  dataloader_num_workers: 0
+  dataloader_drop_last: false
+  ddp_find_unused_parameters: false
+  ddp_backend: nccl
+  ddp_timeout: 180000000
+  deepspeed: configs/deepspeed/zero3_bf16.json
+  expected_deepspeed_stage: 3
+  seed: 42
+  data_seed: 42
+
+benchmark:
+  require_gpu_utilization: true
+  minimum_gpu_samples_per_device: 2
+  minimum_gpu_utilization_mean_pct: 0.1
+  gpu_monitor:
+    command: auto
+    parser: auto
+    interval_seconds: 2.0
+    timeout_seconds: 5.0

@@ -1,6 +1,6 @@
 # Post-Training Project State
 
-Last updated: 2026-07-13
+Last updated: 2026-07-16
 
 This document is the portable handoff for a fresh Codex session or a new machine. It records what has actually been completed, what was only observed on a training server, which conclusions are considered stable, and what remains open.
 
@@ -8,12 +8,12 @@ This document is the portable handoff for a fresh Codex session or a new machine
 
 The repository started as a post-training laboratory for NVIDIA 8-GPU and 16-GPU servers. The completed mainline covers Qwen3.5 SFT efficiency, long-context training, FlashAttention-2, DPO, and a custom TRL GRPO prototype.
 
-The active branch is `hygon-kw1000`. Its next purpose is to adapt the existing workflow to a platform-provided Hygon KW1000/DCU environment without destabilizing the validated NVIDIA/A800 baseline.
+The active branch is `hygon-kw1000`. It now contains the completed direct Transformers/PEFT hardware-adaptation path used on an 8-card BW1000/DCU server, while preserving the validated NVIDIA/A800 LLaMA-Factory baseline. The same branch may be reused for later accelerator work, but each new platform must start with environment discovery and a smoke test rather than assuming the BW integration is portable unchanged.
 
-At the point where this handoff was introduced:
+At the point where the original handoff was introduced:
 
 - `hygon-kw1000`, `main`, `origin/main`, and `origin/hygon-kw1000` all pointed to `6d91146` (`Refine GRPO staged reward scoring`).
-- The branch did not yet contain KW1000-specific implementation changes.
+- The branch did not yet contain KW1000-specific implementation changes. That statement is historical: the branch now includes `src/post_training/sft_peft.py` and the tracked `configs/hygon/` smoke/formal configurations.
 - Always re-check the branch and commit after cloning because this snapshot will naturally become historical.
 
 ## 2. Sources Of Truth
@@ -84,11 +84,21 @@ The first isolated TRL image exposed several dependency-boundary failures:
 
 The resulting container works, but its dependency choices are compatibility decisions rather than general-purpose recommendations.
 
-### 3.3 Hygon KW1000/DCU branch
+### 3.3 BW1000/DCU direct-training environment
 
-The Hygon target is not a CUDA machine. The platform reports KW1000/DCU accelerators and provides a PyTorch/DTK environment. Previous discussion considered a colleague-validated PyTorch 2.4.1, Python 3.10, DTK 25.04.1 combination, but this stack has not yet been verified from the active remote instance and must not be treated as confirmed.
+The completed remote instance reported:
 
-Before adapting any training code, record the actual environment:
+- 8 x BW accelerators, 64.0 GiB per card.
+- Python 3.10.18 from `/opt/conda/bin/python` in the platform image.
+- Vendor PyTorch `2.4.1+das.opt1.dtk25041`, HIP `6.3.25211`, and eight devices exposed through the CUDA-compatible `torch.cuda` API.
+- Vendor DeepSpeed `0.14.2+das.opt1.dtk25041`; distributed NCCL, Gloo, and MPI backends were available.
+- BF16 matrix multiplication passed on device.
+- `HIP_VISIBLE_DEVICES` correctly restricted visible devices; `CUDA_VISIBLE_DEVICES` and `ROCR_VISIBLE_DEVICES` did not on this image.
+- The isolated environment `/root/private_data/venvs/qwen35-bw` used system site packages to preserve vendor PyTorch, then installed Transformers `5.6.0` and PEFT `0.18.0`.
+- The base LLaMA-Factory `0.9.3` installation was not used for these runs: its supported Transformers range did not recognize the checkpoint, while Transformers 5.6 removed imports that LLaMA-Factory 0.9.3 expected.
+- Qwen3.5/Qwen3.6 hybrid linear-attention layers used the Transformers torch fallback because the optional fast-path libraries were unavailable.
+
+For a new accelerator, capture the same inventory before changing dependencies:
 
 ```bash
 which python
@@ -104,7 +114,7 @@ PY
 pip list | grep -E "torch|transformers|accelerate|deepspeed|trl|peft|llamafactory"
 ```
 
-Then determine which distributed backend and device APIs the platform build exposes. Do not begin by installing CUDA wheels, FA2, bitsandbytes, or replacing platform PyTorch.
+Then determine which distributed backend, visibility variable, model architecture, DeepSpeed behavior, and monitoring tool the new platform exposes. Do not begin by replacing platform PyTorch or installing CUDA-only wheels, FA2, or bitsandbytes.
 
 ## 4. Data Assets
 
@@ -177,6 +187,56 @@ The full-run throughput definition is:
 ```text
 tokens/s/GPU = tokenizer-counted total train tokens / trainer runtime / GPU count
 ```
+
+### 5.1 Completed BW1000 direct SFT runs
+
+The BW runs use `src/post_training/sft_peft.py`, direct Transformers 5.6, and
+the same tracked 10,000-row dataset. All formal runs used 8 devices, 3 epochs,
+BF16, a 2,048-token cap, per-device batch 1, gradient accumulation 8, and global
+batch 64. The observed distribution was mean/p50/p95/max
+`145.9/144.0/162.0/285`, so the cap does not describe the typical activation
+length.
+
+| Model | Method | DeepSpeed | Steps | Tokens/s/GPU | Avg optimizer step | Training peak allocated/reserved | GPU utilization |
+| --- | --- | --- | ---: | ---: | ---: | --- | ---: |
+| Qwen3.5-4B | PEFT LoRA | ZeRO-2 | 471/471 | 88.47 | 13.13 s | 9.63/12.64 GiB | invalid collection; do not compare |
+| Qwen3.5-4B | Full text LM | ZeRO-3 | 471/471 | 59.51 | 19.52 s | 13.59/24.47 GiB | 25.31% |
+| Qwen3.6-27B | PEFT text LoRA | ZeRO-3 | 471/471 | 18.69 | 62.13 s | 13.50/26.37 GiB | 42.12% |
+
+All three formal runs completed without OOM. The 4B adapter validation passed;
+the 4B Full checkpoint passed safetensors completeness, fresh-instance reload,
+and finite BF16 forward checks; the 27B adapter passed structural, exact
+parameter-count, dtype, and finiteness checks. The 27B end-to-end save/validation
+peak was 13.50 GiB allocated and 32.07 GiB reserved.
+
+The BW throughput is measured with the same executed, non-padding-token formula
+implemented by the direct runner. It is still not a hardware-only comparison:
+the A800 history used LLaMA-Factory, while BW used direct Transformers/PEFT;
+the 27B run also changes model scale and ZeRO stage relative to the 4B LoRA run.
+PyTorch/HIP allocator memory and historical `nvidia-smi` memory do not have
+identical measurement boundaries.
+
+The direct runner adds platform-oriented integrity gates that were needed in
+practice: dataset hash/schema checks, exact model/adapter parameter gates,
+ZeRO-stage and batch-math checks, partition-aware ZeRO-3 model loading, finite
+loss/gradient checks, executed-token accounting, vendor GPU-monitor validation,
+non-overwriting output directories, and adapter/Full-checkpoint validation.
+
+### 5.2 Qwen3.6-27B qualitative adapter check
+
+A deterministic six-prompt base-versus-adapter smoke confirmed that the PEFT
+adapter loaded and changed behavior. Both base and adapter produced 6/6 legal
+JSON objects and extracted the tested phone/waybill values correctly. The
+adapter consistently used the dataset's Chinese intent taxonomy.
+
+This is not held-out quality evidence. One prompt (`除螨喷雾可以寄吗`) was the
+training row with punctuation changed, and the adapter reproduced highly
+repeated reply templates. It also asked for the item name even though the item
+was already present. Treat this as evidence of successful SFT loading and
+format/slot learning, alongside a warning about template repetition and
+business consistency. A separate, unseen labeled set is still required for
+JSON validity, intent accuracy, phone/waybill exact match, identifier
+hallucination, reply consistency, and reply-diversity metrics.
 
 ## 6. 8K And FlashAttention-2 Findings
 
@@ -392,22 +452,26 @@ outputs/llamafactory/local-qwen3_5-9b/full/sft_10k_1ep_8k_zero3_bs2_ga4_fa2
 outputs/llamafactory/local-qwen3_5-9b/lora/dpo_sarcastic_chengyu_minimal_3ep
 outputs/llamafactory/local-qwen3_5-9b/lora/sft_10k_3ep_messages_trl_compat
 outputs/grpo/customer-intent-qwen3_5-9b-lora-json-prefix-staged-reward-adapterfix
+outputs/transformers-peft/bw-qwen35-4b/lora/sft_customer_intent_10k_3ep_bs1_ga8_zero2_run2_20260714
+outputs/transformers-peft/bw-qwen35-4b/full/sft_customer_intent_10k_3ep_bs1_ga8_zero3
+outputs/transformers-peft/bw-qwen36-27b/lora/zero3_10k_3ep_bs1_ga8_20260715_170051
 ```
 
 If those artifacts are needed on another machine, transfer only the specific checkpoint/adapter and its config/benchmark report. Do not copy the entire output tree blindly.
 
 ## 11. Open Work
 
-### Immediate: KW1000/DCU
+### Immediate: next accelerator
 
-1. Clone and enter the `hygon-kw1000` branch.
-2. Capture the actual Python, PyTorch, DTK, device count/name, distributed backend, and package inventory.
-3. Identify whether the platform exposes CUDA-compatible `torch.cuda` APIs or a vendor-specific interface.
-4. Run a device-allocation and two-device collective smoke test before LLaMA-Factory.
-5. Test whether the installed Transformers recognizes Qwen3.5.
-6. Test the smallest tracked SFT dataset/config with no FA2, no bitsandbytes, and conservative batch/length.
-7. Record throughput and memory with the platform's DCU monitoring tool; do not assume `nvidia-smi`.
-8. Add KW1000-specific configs/scripts without rewriting the A800 baseline.
+The BW1000 training phase is complete. For a different accelerator:
+
+1. Start from `hygon-kw1000`, but keep new platform configs in a separate directory rather than modifying the validated BW configs in place.
+2. Capture Python, platform PyTorch/runtime, device inventory, visibility variables, distributed backends, and installed training libraries.
+3. Verify BF16 allocation/matmul, one-device forward/backward, and a small collective before launching the training runner.
+4. Confirm the installed Transformers recognizes the raw checkpoint and that PEFT/DeepSpeed imports do not replace the vendor PyTorch build.
+5. Run the smallest matching smoke config, then the distributed smoke, before a formal run.
+6. Validate the platform monitor and record both allocator memory and device-tool memory with their measurement boundaries.
+7. Use new output directories and record new server-only artifacts here; never overwrite the BW history.
 
 ### Remaining roadmap
 

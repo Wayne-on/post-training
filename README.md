@@ -1,6 +1,8 @@
-# 80GB GPU Post-Training Lab
+# Post-Training Lab
 
-This repository is a Docker-first scaffold for post-training experiments on 8-GPU and 16-GPU NVIDIA servers.
+This repository combines a Docker-first NVIDIA baseline with direct, vendor-
+environment training paths for post-training experiments on 8- and 16-device
+servers.
 
 For the verified experiment history, server-only artifact boundaries, current
 GRPO state, and the Hygon KW1000 handoff, read
@@ -9,14 +11,217 @@ the repository guidance in [`AGENTS.md`](AGENTS.md) first.
 
 Current target machines:
 
+- BW1000/DCU: 8 x BW, 64GB each, vendor PyTorch 2.4.1/DTK stack; the completed direct-training path is documented below.
 - Node A: 8 GPUs, 80GB VRAM each, driver `550.54.14`, `nvidia-smi` CUDA `12.4`.
 - Node B: 8 GPUs, 80GB VRAM each, driver `535.86.10`, `nvidia-smi` CUDA `12.2`.
 - Temporary Node C: A800 8 GPUs, 80GB VRAM each, driver `530.30.02`, `nvidia-smi` CUDA `12.1`.
 - Temporary Node D: V100 8 GPUs. Use it only as a lower-end validation machine.
 
-This is much better than the original V100 plan. Use one machine first to finish the full workflow, then use two machines for larger full-parameter SFT, DPO, GRPO, or long-context experiments.
+## BW/DCU Direct Transformers SFT Path
 
-For the agreed framework and validation sequence, see `EXPERIMENT_ROADMAP.md`. LLaMA-Factory is now the preferred first framework to run through after the environment smoke test.
+The `hygon-kw1000` branch keeps its platform-specific experiment separate from
+the NVIDIA/LLaMA-Factory baseline. Qwen3.5 uses Transformers 5.6 directly
+because the platform image's LLaMA-Factory 0.9.3 stack is not compatible with
+that Transformers version. LoRA uses PEFT; Full SFT trains the complete model
+returned by `AutoModelForCausalLM` and does not wrap it with PEFT.
+
+Inside the isolated BW virtual environment, first install the supported PEFT
+version without replacing the platform PyTorch build:
+
+```bash
+source /root/private_data/venvs/qwen35-bw/bin/activate
+python -m pip install --no-deps "peft==0.18.0"
+BW_PYTHON=/root/private_data/venvs/qwen35-bw/bin/python
+```
+
+Use `$BW_PYTHON -m torch.distributed.run`, not a bare `torchrun`: the latter can
+resolve to `/opt/conda/bin/python` and silently use Transformers 4.51.1.
+
+Run the single-device LoRA smoke test first:
+
+```bash
+HIP_VISIBLE_DEVICES=0 \
+TOKENIZERS_PARALLELISM=false \
+PYTHONPATH=src \
+$BW_PYTHON -m post_training.sft_peft \
+  configs/hygon/bw_qwen35_4b_lora_smoke.yaml
+```
+
+After the single-device smoke report and saved adapter pass validation, validate
+the vendor DeepSpeed integration on all 8 devices with 1,024 samples:
+
+```bash
+HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+TOKENIZERS_PARALLELISM=false \
+PYTHONPATH=src \
+$BW_PYTHON -m torch.distributed.run \
+  --standalone --nproc_per_node=8 \
+  --module post_training.sft_peft \
+  configs/hygon/bw_qwen35_4b_lora_zero2_smoke_1024.yaml
+```
+
+Only after both smoke reports pass, run the controlled 8-device, ZeRO-2
+experiment:
+
+```bash
+HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+TOKENIZERS_PARALLELISM=false \
+PYTHONPATH=src \
+$BW_PYTHON -m torch.distributed.run \
+  --standalone --nproc_per_node=8 \
+  --module post_training.sft_peft \
+  configs/hygon/bw_qwen35_4b_lora_10k_3ep.yaml
+```
+
+For Full SFT, run the two-step, 128-sample ZeRO-3 smoke first. It checks that
+all parameters in the direct `Qwen3_5ForCausalLM` scope are trainable, completes
+two optimizer steps, gathers a Full safetensors checkpoint, and validates its
+headers and shards, reloads it into a fresh model instance, and runs a finite
+BF16 forward:
+
+```bash
+HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+TOKENIZERS_PARALLELISM=false \
+PYTHONPATH=src \
+$BW_PYTHON -m torch.distributed.run \
+  --standalone --nproc_per_node=8 \
+  --module post_training.sft_peft \
+  configs/hygon/bw_qwen35_4b_full_zero3_smoke_128.yaml
+```
+
+Only after the smoke report shows `2/2` steps, `frozen_parameters=0`, valid
+eight-card utilization, no OOM, and a passed Full checkpoint structure, start
+the controlled 10k x 3 epoch run:
+
+```bash
+HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+TOKENIZERS_PARALLELISM=false \
+PYTHONPATH=src \
+$BW_PYTHON -m torch.distributed.run \
+  --standalone --nproc_per_node=8 \
+  --module post_training.sft_peft \
+  configs/hygon/bw_qwen35_4b_full_10k_3ep.yaml
+```
+
+Each run writes `benchmark/benchmark_metrics.json` and
+`benchmark/benchmark_metrics.md` under its output directory. The primary
+`Tokens/s/GPU` value counts non-padding input tokens from micro-batches that
+actually executed, sums them across ranks, and divides by Trainer runtime and
+world size. GPU utilization is sampled with `hy-smi` (or `rocm-smi` when
+available) during the Trainer train window. These BW configs require a numeric
+utilization sample from every selected card. A preflight checks the monitor
+before training, and the completed window requires at least two samples per
+card and a non-zero training-window mean. Missing, inactive, or incomplete
+utilization makes the benchmark fail explicitly; if the final utilization
+check fails after training, the validated training artifact is still preserved.
+The primary per-card memory metric covers the Trainer window, including normal
+in-training checkpoint saves. A separate end-to-end peak covers the final
+gather, save, fresh reload, and validation, whose rank-zero-only reload overhead
+must not be treated as training memory. For Qwen3.5, the report records both the
+self-attention backend and whether hybrid linear-attention layers used the
+optional fast path or the Transformers torch fallback.
+
+The 10k configuration controls the A800 run's dataset, three epochs, 2K cap,
+BS1/GA8/global batch 64, LoRA hyperparameters, BF16, gradient checkpointing,
+learning-rate schedule, and ZeRO-2 JSON. It is a cross-framework hardware
+compatibility reproduction: the historical baseline used LLaMA-Factory, while
+BW uses direct Transformers + PEFT, so runtime differences must not be
+attributed to hardware alone.
+
+The Full configuration controls the same dataset, epoch, sequence cap, batch
+math, BF16 precision, learning-rate schedule, and ZeRO-3 stage as the historical
+A800 4B Full run. It is still a cross-framework, language-model-scope
+platform-stack reproduction rather than a hardware-only benchmark. Its final
+checkpoint validation includes structural completeness checks plus a fresh
+model-instance reload and finite forward. A separate-process deployment smoke
+is still recommended before treating the weights as production-ready.
+
+### Qwen3.6-27B text LoRA on BW
+
+The non-FP8 Qwen3.6-27B experiment uses the text-only
+`Qwen3_5ForCausalLM` scope returned by `AutoModelForCausalLM`; it excludes the
+checkpoint's vision tower and MTP weights. The runner rejects a quantized
+checkpoint and gates the exact text base (`26,895,998,464` parameters), LoRA
+scope (`116,727,808` trainable parameters), 496 targeted modules, and 992 saved
+adapter tensors.
+
+This model must not be loaded independently by all eight ranks. The runner now
+constructs the Transformers DeepSpeed configuration before `from_pretrained`,
+resolves the hidden-size-dependent ZeRO-3 bucket values, verifies that every
+base parameter was partitioned during loading, and uses logical `ds_numel` and
+`ds_shape` metadata for parameter accounting. It also verifies that the vendor
+DeepSpeed build supports Transformers 5.6's PEFT-only ZeRO-3 save path before
+training starts, so frozen base weights are excluded from adapter artifacts.
+
+Run the eight-device, two-step smoke with a new timestamped output directory:
+
+```bash
+SMOKE_OUT="/root/private_data/post-training/outputs/transformers-peft/bw-qwen36-27b/lora/zero3_smoke_128_$(date +%Y%m%d_%H%M%S)"
+
+HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+TOKENIZERS_PARALLELISM=false \
+PYTHONPATH=/root/private_data/post-training/src \
+$BW_PYTHON -m torch.distributed.run \
+  --standalone --nproc_per_node=8 \
+  --module post_training.sft_peft \
+  configs/hygon/bw_qwen36_27b_lora_zero3_smoke_128.yaml \
+  --output-dir "$SMOKE_OUT"
+```
+
+Do not start the formal run until the smoke report shows `2/2` optimizer steps,
+`zero3_model_load_context_active=true`, complete base-parameter partition
+coverage, the exact parameter gates above, valid eight-card utilization, no
+OOM, and a passed adapter validation with 992 finite tensors.
+
+Then start the controlled 10k x 3 epoch experiment in a new directory:
+
+```bash
+FORMAL_OUT="/root/private_data/post-training/outputs/transformers-peft/bw-qwen36-27b/lora/zero3_10k_3ep_bs1_ga8_$(date +%Y%m%d_%H%M%S)"
+
+HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+TOKENIZERS_PARALLELISM=false \
+PYTHONPATH=/root/private_data/post-training/src \
+$BW_PYTHON -m torch.distributed.run \
+  --standalone --nproc_per_node=8 \
+  --module post_training.sft_peft \
+  configs/hygon/bw_qwen36_27b_lora_10k_3ep_zero3.yaml \
+  --output-dir "$FORMAL_OUT"
+```
+
+The formal run keeps the 10,000-row customer-intent dataset, three epochs,
+2,048-token cap, BS1/GA8/global batch 64, LoRA r16/alpha32/dropout 0.05, BF16,
+and the existing learning-rate schedule. It intentionally changes both model
+scale and distributed strategy relative to the earlier 4B ZeRO-2 LoRA run, so
+it has no historical hardware baseline. Qwen3.6 token lengths are measured
+again with its own tokenizer/template, and `enable_thinking: false` keeps the
+supervised target on the customer-service JSON rather than a thinking suffix.
+The formal benchmark intentionally disables in-training checkpoint saves, so
+Trainer runtime measures the train window without ZeRO-3 checkpoint
+consolidation or I/O; the final adapter save happens after that timing window.
+This makes `Tokens/s/GPU` cleaner, but the run cannot be resumed after a
+container, process, or node failure. Use `tmux` to protect it from an SSH
+disconnect; `tmux` is not fault recovery. On the current BW environment,
+hybrid linear-attention layers are expected to use Transformers' supported
+torch fallback unless the optional FLA and causal-conv1d fast path is
+separately installed and validated.
+
+The completed formal BW results all used 10,000 samples, three epochs,
+BS1/GA8/global batch 64, and finished 471/471 optimizer steps without OOM:
+
+| Model | Method | DeepSpeed | Tokens/s/GPU | Step time | Training peak allocated/reserved |
+| --- | --- | --- | ---: | ---: | --- |
+| Qwen3.5-4B | LoRA | ZeRO-2 | 88.47 | 13.13 s | 9.63/12.64 GiB |
+| Qwen3.5-4B | Full text LM | ZeRO-3 | 59.51 | 19.52 s | 13.59/24.47 GiB |
+| Qwen3.6-27B | Text LoRA | ZeRO-3 | 18.69 | 62.13 s | 13.50/26.37 GiB |
+
+These runs establish training and artifact feasibility, not held-out customer-
+service quality. See `docs/PROJECT_STATE.md` for measurement boundaries,
+server-only output paths, the qualitative adapter check, and comparison limits.
+
+For the agreed framework and validation sequence, see `EXPERIMENT_ROADMAP.md`.
+LLaMA-Factory remains the preferred NVIDIA baseline; the completed BW path uses
+direct Transformers because of the platform compatibility boundary described
+above.
 
 ## Primary Path: Node A Single-Node First
 

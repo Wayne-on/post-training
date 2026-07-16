@@ -1,0 +1,134 @@
+experiment:
+  name: bw-qwen36-27b-peft-lora-zero3-smoke-128
+  purpose: eight-device partitioned-load ZeRO-3 text-only LoRA integration smoke before the 10k x 3 epoch run
+
+comparison:
+  classification: Qwen3.6-27B text-LoRA BW feasibility smoke; no historical throughput baseline
+
+runtime:
+  transformers_version: 5.6.0
+  minimum_peft_version: 0.18.0
+
+model:
+  name_or_path: /root/private_data/models/Qwen3.6-27B
+  expected_checkpoint_model_type: qwen3_5
+  expected_checkpoint_architecture: Qwen3_5ForConditionalGeneration
+  expected_text_model_type: qwen3_5_text
+  expected_text_hidden_size: 5120
+  require_unquantized_checkpoint: true
+  expected_model_class: Qwen3_5ForCausalLM
+  trust_remote_code: false
+  local_files_only: true
+  use_fast_tokenizer: true
+  attn_implementation: sdpa
+  torch_dtype: bfloat16
+
+data:
+  path: examples/datasets/customer_intent_sft_smoke.jsonl
+  split: train
+  expected_source_sample_count: 10000
+  expected_sha256: e88f950159fb4bd35d5642aa2d0e0224f5f6ad794bb09530579191744a3ce687
+  messages_field: messages
+  prompt_field: prompt
+  response_field: response
+  max_samples: 128
+  sample_strategy: shuffle
+  sample_seed: 42
+  max_seq_length: 2048
+  train_on_prompt: false
+  chat_template_kwargs:
+    enable_thinking: false
+  pad_to_multiple_of: 8
+  load_from_cache_file: false
+
+finetuning:
+  method: lora
+  model_scope: frozen Qwen3_5ForCausalLM text language model plus LoRA adapters; vision tower and MTP excluded
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  bias: none
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+    - out_proj
+    - in_proj_qkv
+    - in_proj_z
+    - in_proj_b
+    - in_proj_a
+  expected_base_parameters: 26895998464
+  expected_total_parameters: 27012726272
+  expected_trainable_parameters: 116727808
+  expected_frozen_parameters: 26895998464
+  expected_lora_module_count: 496
+  expected_adapter_tensor_count: 992
+  expected_adapter_key_prefix: base_model.model.model.
+  expected_target_module_counts:
+    q_proj: 16
+    k_proj: 16
+    v_proj: 16
+    o_proj: 16
+    gate_proj: 64
+    up_proj: 64
+    down_proj: 64
+    out_proj: 48
+    in_proj_qkv: 48
+    in_proj_z: 48
+    in_proj_b: 48
+    in_proj_a: 48
+  forbidden_module_name_substrings:
+    - visual
+    - vision
+
+training:
+  output_dir: outputs/transformers-peft/bw-qwen36-27b/lora/sft_customer_intent_zero3_smoke_128_1ep_bs1_ga8
+  expected_world_size: 8
+  num_train_epochs: 1
+  max_steps: 2
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 8
+  learning_rate: 2.0e-4
+  weight_decay: 0.0
+  warmup_ratio: 0.03
+  lr_scheduler_type: cosine
+  logging_steps: 1
+  logging_first_step: true
+  logging_nan_inf_filter: false
+  save_strategy: "no"
+  save_only_model: true
+  zero3_adapter_only_save: true
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: true
+  gradient_checkpointing_input_require_grads: true
+  bf16: true
+  fp16: false
+  optim: adamw_torch
+  max_grad_norm: 1.0
+  report_to: none
+  dataloader_num_workers: 0
+  dataloader_drop_last: false
+  ddp_find_unused_parameters: false
+  ddp_backend: nccl
+  ddp_timeout: 180000000
+  deepspeed: configs/deepspeed/zero3_bf16.json
+  expected_deepspeed_stage: 3
+  seed: 42
+  data_seed: 42
+
+benchmark:
+  require_gpu_utilization: true
+  minimum_gpu_samples_per_device: 2
+  minimum_gpu_utilization_mean_pct: 0.1
+  gpu_monitor:
+    command: auto
+    parser: auto
+    interval_seconds: 2.0
+    timeout_seconds: 5.0
